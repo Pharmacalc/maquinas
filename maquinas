@@ -1,0 +1,1128 @@
+<div id="app" style="font-family:system-ui,-apple-system,sans-serif;max-width:100%;color:#e8e8ea;background:#16171b;border-radius:12px;overflow:hidden">
+  <div id="err" style="display:none;padding:10px 12px;background:#3a1f22;color:#ffb4b4;font-size:12px;font-family:monospace;white-space:pre-wrap"></div>
+
+  <div id="stage" style="position:relative;width:100%;height:44vh;min-height:250px;background:#1b1c21;touch-action:none">
+    <div style="position:absolute;right:8px;bottom:8px;display:flex;flex-direction:column;gap:6px;z-index:5">
+      <button class="zb" onclick="B.zoom(0.8)">+</button>
+      <button class="zb" onclick="B.zoom(1.25)">−</button>
+      <button class="zb" onclick="B.verTudo()" title="ver tudo">⤢</button>
+      <button class="zb" id="btSeguir" onclick="B.seguir()" title="centrar / seguir">⊙</button>
+    </div>
+  </div>
+
+  <div id="painelMotores" style="padding:8px 12px;display:none;background:#1a2318;border-bottom:1px solid #2c2d34">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <span style="font-size:11px;letter-spacing:.08em;color:#8ba888">MOTORES</span>
+      <button class="go" id="playBtn2" onclick="B.play()" style="padding:4px 10px;font-size:12px">▶</button>
+      <button onclick="B.reset()" style="padding:4px 10px;font-size:12px">↺</button>
+    </div>
+    <div id="motores"></div>
+  </div>
+
+  <div id="bar" style="padding:9px 12px;background:#1f2027;border-top:1px solid #2c2d34;min-height:44px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+    <span id="barMsg" style="font-size:12px;color:#8b8d98">Toque numa peça para selecionar</span>
+  </div>
+
+  <div style="padding:9px 12px;border-top:1px solid #2c2d34">
+    <div style="font-size:11px;letter-spacing:.08em;color:#8b8d98;margin-bottom:6px">PRATELEIRA</div>
+    <div id="shelf" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+  </div>
+
+  <div id="editor" style="padding:9px 12px;border-top:1px solid #2c2d34;display:none">
+    <div style="font-size:11px;letter-spacing:.08em;color:#8b8d98;margin-bottom:6px"><span id="selName">—</span></div>
+    <div id="params"></div>
+    <div style="font-size:11px;letter-spacing:.08em;color:#8b8d98;margin:8px 0 2px">GIRO</div>
+    <div id="rots"></div>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button onclick="B.centrar()">Centrar</button>
+      <button id="btDup" onclick="B.dup()">Duplicar</button>
+      <button onclick="B.del()">Remover</button>
+      <button onclick="B.desel()">Soltar</button>
+    </div>
+  </div>
+
+  <div style="padding:9px 12px;border-top:1px solid #2c2d34;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    <button class="go" id="playBtn" onclick="B.play()">▶ Testar</button>
+    <button onclick="B.reset()">Reiniciar</button>
+    <button onclick="B.clear()">Limpar</button>
+    <span id="stat" style="margin-left:auto;font-size:12px;color:#8b8d98"></span>
+  </div>
+  <div style="padding:0 12px 10px;font-size:12px;color:#8b8d98;line-height:1.5">
+    Um dedo na peça arrasta · no vazio orbita · <b>dois dedos = zoom + deslocar</b> · ⤢ enquadra tudo.
+    <b>Trilho</b>: a 2ª peça corre ao longo da 1ª (a haste é o trilho). No painel verde,
+    <b>segure ◀ ou ▶</b> para mover — solta, para. A barrinha ao lado regula a velocidade.
+    Os <b>pontos cinza</b> são lugares notáveis (centro, pontas, cantos, eixo). O <b>ímã</b> puxa o
+    pivô até eles quando passa perto, e fica verde ao capturar — mas nunca obriga: solte fora e ele
+    fica onde você deixou. <b>Pino</b> = a 2ª peça gira no eixo dela mesma (roda). O eixo de qualquer junta pode apontar
+    para <b>qualquer direção</b>: presets X/Y/Z, <b>↗ peça</b> para seguir o eixo de uma peça, ou os
+    sliders de azimute/elevação.
+    Toque numa junta e use <b>⚙ motorizar</b>.
+    Com duas peças selecionadas: <b>arraste a bola roxa</b>, ou ligue <b>⌖ tocar p/ posicionar</b> e
+    toque no ponto exato onde a dobra deve ficar. <b>Toque numa junta já criada</b> para reposicioná-la,
+    trocar o eixo, o tipo, ou removê-la. Toque em <b>duas</b> peças e os botões de ligação aparecem na barra logo abaixo da cena.
+  </div>
+</div>
+
+<style>
+  #app button{background:#26272e;color:#d8d9e0;border:1px solid #383941;border-radius:7px;padding:7px 11px;font-size:13px;cursor:pointer;font-family:inherit}
+  #app button:active{background:#31323a}
+  #app .acc{border-color:#5a6f96;background:#28334a;color:#c6d8f2}
+  #app .go{border-color:#3f6a4a;background:#22301f;color:#b7e0b9}
+  #app .ax{padding:5px 9px;font-size:12px}
+  #app .ax.on{background:#28334a;border-color:#5a6f96;color:#c6d8f2}
+  #app .zb{width:38px;height:38px;font-size:18px;padding:0}
+  #app .chip{font-size:12px;padding:3px 8px;border-radius:99px;background:#2b3550;color:#c6d8f2;border:1px solid #45557a}
+  #app .sl{display:flex;align-items:center;gap:8px;margin:4px 0}
+  #app .sl label{font-size:12px;color:#9a9ca6;width:66px}
+  #app .sl input{flex:1;min-width:0}
+  #app .sl span{font-size:12px;color:#d8d9e0;width:56px;text-align:right;font-variant-numeric:tabular-nums}
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+<script>
+function shout(m){ var e=document.getElementById('err'); e.style.display='block'; e.textContent+=m+'\n'; }
+window.addEventListener('error',function(ev){ shout('ERRO: '+ev.message+' @'+ev.lineno); });
+try{
+if(typeof THREE==='undefined'){ shout('THREE nao carregou'); throw new Error('sem THREE'); }
+if(typeof CANNON==='undefined'){ shout('CANNON nao carregou'); throw new Error('sem CANNON'); }
+
+const stage=document.getElementById('stage');
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x1b1c21);
+const cam=new THREE.PerspectiveCamera(50,1,0.01,100);
+const rend=new THREE.WebGLRenderer({antialias:true});
+rend.domElement.style.display='block';
+stage.insertBefore(rend.domElement, stage.firstChild);
+scene.add(new THREE.HemisphereLight(0xbfd4ff,0x30302c,0.9));
+const dl=new THREE.DirectionalLight(0xffffff,0.7); dl.position.set(3,6,3); scene.add(dl);
+scene.add(new THREE.GridHelper(4,20,0x3a3b44,0x2a2b33));
+
+const world=new CANNON.World();
+world.gravity.set(0,-9.82,0); world.solver.iterations=200;  // firmeza em cadeias de solda
+world.defaultContactMaterial.friction=0.6;
+const ground=new CANNON.Body({mass:0,shape:new CANNON.Plane()});
+ground.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0),-Math.PI/2);
+ground.collisionFilterGroup=1; ground.collisionFilterMask=-1;
+world.addBody(ground);
+
+let orb={az:0.7,el:0.45,d:2.2,t:new THREE.Vector3(0,0.3,0)};
+function placeCam(){
+  cam.position.set(orb.t.x+orb.d*Math.cos(orb.el)*Math.sin(orb.az),
+                   orb.t.y+orb.d*Math.sin(orb.el),
+                   orb.t.z+orb.d*Math.cos(orb.el)*Math.cos(orb.az));
+  cam.lookAt(orb.t);
+}
+function pan(dx,dy){
+  const s=orb.d*0.0018;
+  const fwd=new THREE.Vector3(); cam.getWorldDirection(fwd);
+  const right=new THREE.Vector3().crossVectors(fwd,new THREE.Vector3(0,1,0)).normalize();
+  const up=new THREE.Vector3().crossVectors(right,fwd).normalize();
+  orb.t.addScaledVector(right,-dx*s);
+  orb.t.addScaledVector(up,dy*s);
+  placeCam();
+}
+function verTudo(){
+  if(!parts.length){ orb.t.set(0,0.3,0); orb.d=2.2; placeCam(); return; }
+  const b=new THREE.Box3();
+  parts.forEach(function(p){ b.expandByObject(p.mesh); });
+  const c=b.getCenter(new THREE.Vector3()), sz=b.getSize(new THREE.Vector3());
+  orb.t.copy(c);
+  orb.d=Math.max(0.5,Math.max(sz.x,sz.y,sz.z)*2.0+0.4);
+  placeCam();
+}
+function centrar(p){ if(!p) return;
+  orb.t.set(p.body.position.x,p.body.position.y,p.body.position.z); placeCam(); }
+let seguindo=null;
+// centra a 2ª peça sobre a 1ª nos eixos escolhidos (não sobrepõe: alinha)
+function centrarEm(quais){
+  if(sel.length!==2) return;
+  const alvoP=sel[0].body.position, movel=sel[1];
+  const g=grupoDe(movel);
+  const dx=quais.indexOf('x')>=0 ? alvoP.x-movel.body.position.x : 0;
+  const dy=quais.indexOf('y')>=0 ? alvoP.y-movel.body.position.y : 0;
+  const dz=quais.indexOf('z')>=0 ? alvoP.z-movel.body.position.z : 0;
+  moverGrupo(g,dx,dy,dz); sync();
+}
+// empurra a peça/bloco selecionado por um passo fixo
+function nudge(dx,dy,dz){
+  const p=sel[0]; if(!p) return;
+  const g=grupoDe(p);
+  const menor=Math.min.apply(null,g.map(o=>o.body.position.y));
+  if(menor+dy<0.02) dy=0.02-menor;
+  moverGrupo(g,dx,dy,dz); sync();
+}
+function alvoSeguir(){
+  const p = sel[0] || (selLink && selLink.pa) || parts[0];
+  if(!p) return;
+  if(seguindo===p){ seguindo=null; }
+  else { seguindo=p; centrar(p); }
+  const b=document.getElementById('btSeguir');
+  if(b) b.style.background=seguindo?'#22301f':'';
+}
+
+function resize(){ const w=stage.clientWidth,h=stage.clientHeight; if(!w||!h) return;
+  rend.setSize(w,h); rend.setPixelRatio(Math.min(devicePixelRatio,2));
+  cam.aspect=w/h; cam.updateProjectionMatrix(); placeCam(); }
+new ResizeObserver(resize).observe(stage);
+
+const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36};
+const CAT={
+  barra:{nome:'Barra reta',p:{comp:{r:[0.1,1.2],v:0.5,u:'m'},esp:{r:[0.01,0.06],v:0.025,u:'m'}}},
+  arco:{nome:'Semicirculo',p:{raio:{r:[0.08,0.6],v:0.25,u:'m'},arco:{r:[20,360],v:180,u:'\u00b0'},esp:{r:[0.01,0.05],v:0.02,u:'m'}}},
+  placa:{nome:'Placa',p:{larg:{r:[0.05,0.9],v:0.35,u:'m'},prof:{r:[0.05,0.9],v:0.22,u:'m'},esp:{r:[0.004,0.05],v:0.012,u:'m'}}},
+  roda:{nome:'Roda',p:{raio:{r:[0.03,0.25],v:0.09,u:'m'},larg:{r:[0.01,0.1],v:0.035,u:'m'}}}
+};
+let parts=[],sel=[],running=false,nId=0,hingeAx=0,links=[];
+
+function build(tipo,par){
+  const g=new THREE.Group(), shapes=[];
+  const mat=new THREE.MeshLambertMaterial({color:MAT[tipo]});
+  if(tipo==='barra'){
+    const e=par.esp;
+    shapes.push({s:new CANNON.Box(new CANNON.Vec3(par.comp/2,e/2,e/2)),o:new CANNON.Vec3()});
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(par.comp,e,e),mat));
+  } else if(tipo==='placa'){
+    shapes.push({s:new CANNON.Box(new CANNON.Vec3(par.larg/2,par.esp/2,par.prof/2)),o:new CANNON.Vec3()});
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(par.larg,par.esp,par.prof),mat));
+  } else if(tipo==='arco'){
+    const n=Math.max(4,Math.round(par.arco/15)), tot=par.arco*Math.PI/180;
+    const seg=2*par.raio*Math.sin(tot/(2*n)), e=par.esp;
+    for(let i=0;i<n;i++){
+      const a=-tot/2+tot*(i+0.5)/n;
+      const px=par.raio*Math.sin(a), pz=par.raio*Math.cos(a)-par.raio;
+      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(0,1,0),a);
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(seg/2*1.03,e/2,e/2)),o:new CANNON.Vec3(px,0,pz),q:q});
+      const m=new THREE.Mesh(new THREE.BoxGeometry(seg*1.03,e,e),mat);
+      m.position.set(px,0,pz); m.rotation.y=a; g.add(m);
+    }
+  } else if(tipo==='roda'){
+    // colisão ESFÉRICA (cilindro do cannon afunda 80mm; esfera 0mm — medido)
+    shapes.push({s:new CANNON.Sphere(par.raio),o:new CANNON.Vec3()});
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(par.raio,par.raio,par.larg,20),mat);
+    m.rotation.z=Math.PI/2; g.add(m);
+    const h=new THREE.Mesh(new THREE.CylinderGeometry(par.raio*0.42,par.raio*0.42,par.larg*1.05,14),
+      new THREE.MeshLambertMaterial({color:0x9aa3b2}));
+    h.rotation.z=Math.PI/2; g.add(h);
+  }
+  return {shapes,mesh:g};
+}
+function aplicar(p,shapes){
+  p.body.shapes.length=0; p.body.shapeOffsets.length=0; p.body.shapeOrientations.length=0;
+  shapes.forEach(x=>p.body.addShape(x.s,x.o,x.q));
+  p.body.updateMassProperties();
+  if(p.body.updateBoundingRadius) p.body.updateBoundingRadius();
+  p.body.aabbNeedsUpdate=true;
+}
+function setRot(p){
+  const q=new CANNON.Quaternion();
+  q.setFromEuler(p.rot.x*Math.PI/180,p.rot.y*Math.PI/180,p.rot.z*Math.PI/180,'XYZ');
+  girarGrupo(p,q);                 // gira a montagem inteira, não só a peça
+  p.hq=p.body.quaternion.clone();
+  links.forEach(function(l){ if(grupoDe(p).indexOf(l.pa)>=0) refazer(l); });
+  sync();
+}
+function addPart(tipo,pos){
+  const par={}; for(const k in CAT[tipo].p) par[k]=CAT[tipo].p[k].v;
+  const r=build(tipo,par);
+  const body=new CANNON.Body({mass:1});
+  r.shapes.forEach(x=>body.addShape(x.s,x.o,x.q));
+  body.position.copy(pos||new CANNON.Vec3((Math.random()-0.5)*0.2,0.5,(Math.random()-0.5)*0.2));
+  body.collisionFilterGroup=2; body.collisionFilterMask=-1;
+  world.addBody(body); scene.add(r.mesh);
+  const p={id:++nId,tipo,par,rot:{x:0,y:0,z:0},asm:null,body,mesh:r.mesh,
+           home:body.position.clone(),hq:body.quaternion.clone()};
+  parts.push(p); sel=[p]; paint(); ui(); sync(); return p;
+}
+function rebuild(p){
+  const r=build(p.tipo,p.par);
+  scene.remove(p.mesh); p.mesh=r.mesh; scene.add(r.mesh);
+  aplicar(p,r.shapes); paint(); sync();
+}
+// A LockConstraint do cannon 0.6.2 tem um BUG: o update() usa Vec3.UNIT_X/Y/Z
+// fixos em vez dos eixos do momento da solda, então ela ALINHA as peças em vez
+// de travá-las como estão. Correção (igual à do cannon-es): guardar os eixos.
+function soldar(a,b){
+  const V=CANNON.Vec3;
+  const c=new CANNON.LockConstraint(a,b);
+  const xA=a.vectorToLocalFrame(new V(1,0,0)), yA=a.vectorToLocalFrame(new V(0,1,0)), zA=a.vectorToLocalFrame(new V(0,0,1));
+  const xB=b.vectorToLocalFrame(new V(1,0,0)), yB=b.vectorToLocalFrame(new V(0,1,0)), zB=b.vectorToLocalFrame(new V(0,0,1));
+  c.update=function(){
+    CANNON.PointToPointConstraint.prototype.update.call(this);
+    a.vectorToWorldFrame(xA,this.rotationalEquation1.axisA);
+    b.vectorToWorldFrame(yB,this.rotationalEquation1.axisB);
+    a.vectorToWorldFrame(yA,this.rotationalEquation2.axisA);
+    b.vectorToWorldFrame(zB,this.rotationalEquation2.axisB);
+    a.vectorToWorldFrame(zA,this.rotationalEquation3.axisA);
+    b.vectorToWorldFrame(xB,this.rotationalEquation3.axisB);
+  };
+  return c;
+}
+// O Cannon não tem junta prismática. Construída com o que ele tem:
+// trava as 2 direções perpendiculares, libera a 3ª, e trava a rotação.
+function fazTrilho(a,b,pa,pb,dirW){
+  const V=CANNON.Vec3;
+  const c=new CANNON.PointToPointConstraint(a,pa,b,pb,1e6);
+  const dA=a.quaternion.inverse().vmult(new V(dirW.x,dirW.y,dirW.z)); dA.normalize();
+  c.equationZ.maxForce=0; c.equationZ.minForce=0;          // eixo LIVRE
+  const r1=new CANNON.RotationalEquation(a,b), r2=new CANNON.RotationalEquation(a,b),
+        r3=new CANNON.RotationalEquation(a,b);
+  c.equations.push(r1,r2,r3);
+  const xA=a.vectorToLocalFrame(new V(1,0,0)), yA=a.vectorToLocalFrame(new V(0,1,0)),
+        zA=a.vectorToLocalFrame(new V(0,0,1));
+  const xB=b.vectorToLocalFrame(new V(1,0,0)), yB=b.vectorToLocalFrame(new V(0,1,0)),
+        zB=b.vectorToLocalFrame(new V(0,0,1));
+  const t1=new V(), t2=new V();
+  c.update=function(){
+    CANNON.PointToPointConstraint.prototype.update.call(this);
+    const d=a.quaternion.vmult(dA); d.normalize(); d.tangents(t1,t2);
+    this.equationX.ni.copy(t1); this.equationY.ni.copy(t2); this.equationZ.ni.copy(d);
+    a.vectorToWorldFrame(xA,r1.axisA); b.vectorToWorldFrame(yB,r1.axisB);
+    a.vectorToWorldFrame(yA,r2.axisA); b.vectorToWorldFrame(zB,r2.axisB);
+    a.vectorToWorldFrame(zA,r3.axisA); b.vectorToWorldFrame(xB,r3.axisB);
+  };
+  c._dirLocalA=dA;
+  return c;
+}
+// fim de curso: sem isto o carro sai voando pela ponta da haste
+function limitarTrilhos(){
+  links.forEach(function(l){
+    if(l.kind!=='trilho'||!l.c._dirLocalA) return;
+    const A=l.pa.body, B=l.pb.body;
+    const d=A.quaternion.vmult(l.c._dirLocalA);
+    const piv=A.pointToWorldFrame(l.pivA);
+    const r=new CANNON.Vec3(B.position.x-piv.x,B.position.y-piv.y,B.position.z-piv.z);
+    const s=r.dot(d), lim=l.curso/2;
+    if(Math.abs(s)>lim){
+      const corr=(Math.abs(s)-lim)*(s>0?1:-1);
+      B.position.x-=d.x*corr; B.position.y-=d.y*corr; B.position.z-=d.z*corr;
+      const vd=B.velocity.dot(d);
+      if(vd*(s>0?1:-1)>0){ B.velocity.x-=d.x*vd; B.velocity.y-=d.y*vd; B.velocity.z-=d.z*vd; }
+    }
+  });
+}
+// comprimento útil do trilho, vindo da peça que serve de haste
+function cursoDa(p){
+  if(p.tipo==='barra') return p.par.comp;
+  if(p.tipo==='placa') return Math.max(p.par.larg,p.par.prof);
+  if(p.tipo==='arco') return p.par.raio*2;
+  return 0.3;
+}
+function montarLigacao(a,b,kind,pivW,axDir){
+  const mid=new CANNON.Vec3(pivW.x,pivW.y,pivW.z);
+  const pa=a.body.pointToLocalFrame(mid), pb=b.body.pointToLocalFrame(mid);
+  let c, axL=null;
+  if(kind==='weld') c=soldar(a.body,b.body);
+  else if(kind==='ball') c=new CANNON.PointToPointConstraint(a.body,pa,b.body,pb,1e6);
+  else if(kind==='trilho'){
+    c=fazTrilho(a.body,b.body,pa,pb,axDir);
+    axL=c._dirLocalA;
+  }
+  else if(kind==='pino'){
+    // o pino atravessa B pelo EIXO DELA (local X) — é isto que faz roda ser roda
+    const axB=new CANNON.Vec3(1,0,0);
+    const axW=b.body.quaternion.vmult(axB);
+    axL=a.body.quaternion.inverse().vmult(axW);
+    c=new CANNON.HingeConstraint(a.body,b.body,{pivotA:pa,pivotB:pb,axisA:axL,axisB:axB});
+  }
+  else{
+    const d=axDir.clone().normalize();
+    const ax=new CANNON.Vec3(d.x,d.y,d.z);       // eixo ARBITRÁRIO no mundo
+    axL=a.body.quaternion.inverse().vmult(ax);
+    c=new CANNON.HingeConstraint(a.body,b.body,{pivotA:pa,pivotB:pb,
+      axisA:axL, axisB:b.body.quaternion.inverse().vmult(ax)});
+  }
+  return {c:c,pa:pa,pb:pb,axL:axL};
+}
+// REFAZ a ligação com o pivô/eixo/tipo novos — é o que torna a junta editável
+function aplicarMotor(l){
+  if(!l.motor || (l.kind!=='hinge'&&l.kind!=='pino'&&l.kind!=='trilho') || !l.c.enableMotor) return;
+  if(l.motor.on){
+    l.c.enableMotor();
+    // MOMENTÂNEO: só gira enquanto houver comando; senão trava em 0
+    l.c.setMotorSpeed(l.motor.ativo ? l.motor.vel : 0);
+    l.c.setMotorMaxForce(l.motor.forca);
+  } else if(l.c.disableMotor) l.c.disableMotor();
+}
+function comandar(l,dir){   // dir: -1, 0, +1
+  l.motor.ativo = dir!==0;
+  l.motor.vel = dir * Math.abs(l.motor.mag);
+  aplicarMotor(l);
+}
+function refazer(l){
+  world.removeConstraint(l.c);
+  if(l.mk) scene.remove(l.mk);
+  if(l.mkB) scene.remove(l.mkB);
+  const r=montarLigacao(l.pa,l.pb,l.kind,l.pivW,dirDeAng(l.axAz,l.axEl));
+  world.addConstraint(r.c);
+  l.c=r.c; l.pivA=r.pa; l.pivB=r.pb; l.axL=r.axL;
+  aplicarMotor(l);
+  l.mk=mkMarcador(l.kind,false); scene.add(l.mk);
+  l.mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
+    new THREE.MeshBasicMaterial({color:0xd9a04a}));
+  scene.add(l.mkB); sync(); ui();
+}
+// ── ESPELHO: 1ª peça = âncora (define o plano), 2ª = o que espelhar ──
+function matEspelho(n){
+  return new THREE.Matrix4().set(
+    1-2*n.x*n.x, -2*n.x*n.y, -2*n.x*n.z, 0,
+    -2*n.y*n.x, 1-2*n.y*n.y, -2*n.y*n.z, 0,
+    -2*n.z*n.x, -2*n.z*n.y, 1-2*n.z*n.z, 0, 0,0,0,1);
+}
+function refletePonto(v,pl,n){ // reflete v no plano que passa por pl com normal n
+  const d=v.clone().sub(pl);
+  return pl.clone().add(d.sub(n.clone().multiplyScalar(2*d.dot(n))));
+}
+function refleteQuat(q,n){    // R' = M R M -> continua rotação (det=+1)
+  const M=matEspelho(n);
+  const R=new THREE.Matrix4().makeRotationFromQuaternion(
+    new THREE.Quaternion(q.x,q.y,q.z,q.w));
+  const R2=new THREE.Matrix4().multiplyMatrices(M,R).multiply(M);
+  return new THREE.Quaternion().setFromRotationMatrix(R2);
+}
+// tudo que pende da peça, SEM atravessar a âncora
+function ramoDe(p,ancora){
+  const vis=[p], fila=[p];
+  while(fila.length){
+    const cur=fila.pop();
+    links.forEach(function(l){
+      const o=(l.pa===cur)?l.pb:(l.pb===cur)?l.pa:null;
+      if(o && o!==ancora && vis.indexOf(o)<0){ vis.push(o); fila.push(o); }
+    });
+  }
+  return vis;
+}
+function duplicarBloco(p){
+  const grupo=grupoDe(p);                 // a montagem conexa inteira
+  const off=new THREE.Vector3(0.18,0,0.18);
+  const mapa=new Map();
+  grupo.forEach(function(o){
+    const q=addPart(o.tipo,new CANNON.Vec3(0,0,0));
+    Object.keys(o.par).forEach(k=>q.par[k]=o.par[k]);
+    rebuild(q);
+    q.body.position.set(o.body.position.x+off.x, o.body.position.y, o.body.position.z+off.z);
+    q.body.quaternion.copy(o.body.quaternion);
+    q.rot.x=o.rot.x; q.rot.y=o.rot.y; q.rot.z=o.rot.z;
+    q.home=q.body.position.clone(); q.hq=q.body.quaternion.clone();
+    mapa.set(o,q);
+  });
+  links.slice().forEach(function(l){
+    const A=mapa.get(l.pa), B=mapa.get(l.pb);
+    if(!A||!B) return;                     // só ligações internas ao bloco
+    const pv=l.pivW.clone().add(off);
+    const dir=dirDeAng(l.axAz,l.axEl);
+    const r=montarLigacao(A,B,l.kind,pv,dir);
+    world.addConstraint(r.c);
+    unir(A,B);
+    const mk=mkMarcador(l.kind,false); scene.add(mk);
+    const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
+      new THREE.MeshBasicMaterial({color:0xd9a04a}));
+    scene.add(mkB);
+    const nl={c:r.c,kind:l.kind,a:A.id,b:B.id,pa:A,pb:B,mk:mk,mkB:mkB,
+      pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv.clone(),curso:l.curso,
+      axAz:l.axAz,axEl:l.axEl,
+      motor:{on:l.motor.on,vel:0,mag:l.motor.mag,forca:l.motor.forca,ativo:false,inv:l.motor.inv}};
+    links.push(nl); aplicarMotor(nl);
+  });
+  const novo=mapa.get(p);
+  sel=novo?[novo]:[]; selLink=null; paint(); ui(); sync();
+}
+function espelhar(eixo){
+  if(sel.length!==2) return;
+  const anc=sel[0], alvoP=sel[1];
+  const n=eixoMundo(eixo);
+  const pl=new THREE.Vector3(anc.body.position.x,anc.body.position.y,anc.body.position.z);
+  const ramo=ramoDe(alvoP,anc);
+  const mapa=new Map();
+  ramo.forEach(function(o){
+    const q=addPart(o.tipo,new CANNON.Vec3(0,0,0));
+    Object.keys(o.par).forEach(k=>q.par[k]=o.par[k]);
+    rebuild(q);
+    const pw=refletePonto(new THREE.Vector3(o.body.position.x,o.body.position.y,o.body.position.z),pl,n);
+    q.body.position.set(pw.x,pw.y,pw.z);
+    const qq=refleteQuat(o.body.quaternion,n);
+    q.body.quaternion.set(qq.x,qq.y,qq.z,qq.w);
+    const e=new CANNON.Vec3(); q.body.quaternion.toEuler(e);
+    q.rot.x=e.x*180/Math.PI; q.rot.y=e.y*180/Math.PI; q.rot.z=e.z*180/Math.PI;
+    q.home=q.body.position.clone(); q.hq=q.body.quaternion.clone();
+    mapa.set(o,q);
+  });
+  // recria as ligações: dentro do ramo E do ramo para a âncora
+  const feitas=[];
+  links.slice().forEach(function(l){
+    const A=mapa.get(l.pa)|| (l.pa===anc?anc:null);
+    const B=mapa.get(l.pb)|| (l.pb===anc?anc:null);
+    if(!A||!B) return;
+    if(A===anc&&B===anc) return;
+    if(!mapa.get(l.pa)&&!mapa.get(l.pb)) return;   // nenhuma ponta é cópia
+    const pv=refletePonto(l.pivW,pl,n);
+    const dirO=dirDeAng(l.axAz,l.axEl);
+    const dirE=dirO.clone().sub(n.clone().multiplyScalar(2*dirO.dot(n)));
+    const r=montarLigacao(A,B,l.kind,pv,dirE);
+    world.addConstraint(r.c);
+    unir(A,B);
+    const mk=mkMarcador(l.kind,false); scene.add(mk);
+    const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
+      new THREE.MeshBasicMaterial({color:0xd9a04a}));
+    scene.add(mkB);
+    feitas.push({c:r.c,kind:l.kind,a:A.id,b:B.id,pa:A,pb:B,mk:mk,mkB:mkB,
+      pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv.clone(),curso:l.curso,
+      axAz:angDeDir(dirE).az, axEl:angDeDir(dirE).el,
+      motor:{on:l.motor.on, vel:0, mag:l.motor.mag, forca:l.motor.forca, ativo:false, inv:!l.motor.inv}});
+  });
+  feitas.forEach(function(l){ links.push(l); aplicarMotor(l); });
+  sel=[]; paint(); ui(); sync();
+}
+function join(kind){
+  if(sel.length!==2) return;
+  const a=sel[0], b=sel[1];
+  // pino: automático no centro da 2ª peça, no eixo dela. Sem posicionar nada.
+  const P = (kind==='pino')
+    ? new THREE.Vector3(b.body.position.x,b.body.position.y,b.body.position.z)
+    : pivotAtual();
+  const mid=new CANNON.Vec3(P.x,P.y,P.z);
+  const dir = (kind==='pino') ? eixoDaPeca(b)
+            : (kind==='trilho') ? eixoDaPeca(a)      // a haste É o trilho
+            : dirDeAng(novoAz,novoEl);
+  const r=montarLigacao(a,b,kind,P,dir);
+  const c=r.c, pa=r.pa, pb=r.pb;
+  world.addConstraint(c);
+  unir(a,b);
+  const mk=mkMarcador(kind,false); scene.add(mk);
+  // âncora do lado B: se as duas se separarem, você VÊ a junta abrindo
+  const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
+    new THREE.MeshBasicMaterial({color:0xd9a04a}));
+  scene.add(mkB);
+  links.push({c:c,kind:kind,a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
+              pivA:pa,pivB:pb,axL:r.axL,pivW:P.clone(),curso:cursoDa(a),
+              axAz:angDeDir(dir).az, axEl:angDeDir(dir).el,
+              motor:{on:false,vel:0,mag:3,forca:30,ativo:false}});
+  sel=[]; pivotUser=null; pivotLivre=null; paint(); ui(); sync();
+}
+const COR={weld:0xffffff, ball:0xb49cff, hinge:0x6fd6c8, pino:0xf0a860,
+           trilho:0x62b0f0, motor:0x7ee06a};
+function eixoMundo(i){ return new THREE.Vector3(i===0?1:0,i===1?1:0,i===2?1:0); }
+function dirDeAng(az,el){
+  const a=az*Math.PI/180, e=el*Math.PI/180;
+  return new THREE.Vector3(Math.cos(e)*Math.cos(a), Math.sin(e), Math.cos(e)*Math.sin(a)).normalize();
+}
+function angDeDir(d){
+  const v=d.clone().normalize();
+  return {az:Math.atan2(v.z,v.x)*180/Math.PI, el:Math.asin(Math.max(-1,Math.min(1,v.y)))*180/Math.PI};
+}
+// eixo próprio de uma peça (X local) em coordenadas do mundo
+function eixoDaPeca(p){
+  const q=p.body.quaternion, v=q.vmult(new CANNON.Vec3(1,0,0));
+  return new THREE.Vector3(v.x,v.y,v.z).normalize();
+}
+let novoAz=90, novoEl=0;   // padrão = eixo Z
+function mkMarcador(kind, transp){
+  const g=new THREE.Group();
+  const op = transp?{transparent:true,opacity:0.55}:{};
+  if(kind==='ball'||kind==='weld'){
+    const m=new THREE.Mesh(new THREE.SphereGeometry(kind==='ball'?0.022:0.014,16,12),
+      new THREE.MeshBasicMaterial(Object.assign({color:COR[kind]},op)));
+    g.add(m); g.userData.bola=m;
+  }
+  if(kind==='hinge'||kind==='pino'||kind==='trilho'){
+    // LINHA = eixo da dobradiça: mostra orientação E local
+    const geo=new THREE.CylinderGeometry(0.005,0.005,0.34,10);
+    const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial(Object.assign({color:COR[kind]},op)));
+    g.add(m); g.userData.haste=m;
+    const p=new THREE.Mesh(new THREE.SphereGeometry(0.016,14,10),
+      new THREE.MeshBasicMaterial(Object.assign({color:COR[kind]},op)));
+    g.add(p);
+  }
+  return g;
+}
+function porMarcador(g, kind, pos, axis){
+  g.position.copy(pos);
+  if((kind==='hinge'||kind==='pino'||kind==='trilho')&&g.userData.haste){
+    g.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), axis.clone().normalize());
+  }
+}
+
+// os "lugares adequados": geometria notável de cada peça
+function pontosLocais(p){
+  const q=p.par, L=[];
+  const add=(x,y,z,nome)=>L.push({v:new THREE.Vector3(x,y,z),n:nome});
+  add(0,0,0,'centro');
+  if(p.tipo==='barra'){
+    add(q.comp/2,0,0,'ponta'); add(-q.comp/2,0,0,'ponta');
+    add(q.comp/4,0,0,'1/4'); add(-q.comp/4,0,0,'1/4');
+  } else if(p.tipo==='placa'){
+    [-1,1].forEach(sx=>[-1,1].forEach(sz=>add(sx*q.larg/2,0,sz*q.prof/2,'canto')));
+    add(q.larg/2,0,0,'meio aresta'); add(-q.larg/2,0,0,'meio aresta');
+    add(0,0,q.prof/2,'meio aresta'); add(0,0,-q.prof/2,'meio aresta');
+    add(0,q.esp/2,0,'face'); add(0,-q.esp/2,0,'face');
+  } else if(p.tipo==='roda'){
+    add(q.larg/2,0,0,'eixo'); add(-q.larg/2,0,0,'eixo');
+    add(0,q.raio,0,'aro'); add(0,-q.raio,0,'aro');
+  } else if(p.tipo==='arco'){
+    const tot=q.arco*Math.PI/180;
+    [-1,1].forEach(s=>add(q.raio*Math.sin(s*tot/2),0,q.raio*Math.cos(s*tot/2)-q.raio,'ponta'));
+    add(0,0,-q.raio,'centro do arco');
+  }
+  return L;
+}
+function pontosMundo(lista){
+  const out=[];
+  lista.forEach(function(p){
+    pontosLocais(p).forEach(function(o){
+      const v=new CANNON.Vec3(o.v.x,o.v.y,o.v.z);
+      const w=p.body.pointToWorldFrame(v);
+      out.push({p:new THREE.Vector3(w.x,w.y,w.z), n:o.n, peca:p});
+    });
+  });
+  return out;
+}
+let imanOn=true, imaAtivo=null, imaRaio=46;   // px na tela: consistente em qualquer zoom
+function paraTela(v){
+  const p=v.clone().project(cam);
+  const r=rend.domElement;
+  return new THREE.Vector2((p.x*0.5+0.5)*r.clientWidth, (-p.y*0.5+0.5)*r.clientHeight);
+}
+// ímã SUAVE: atrai se estiver perto NA TELA, senão deixa você em paz
+function comIma(v,lista){
+  imaAtivo=null;
+  if(!imanOn) return v;
+  const vt=paraTela(v);
+  let melhor=null, dmin=imaRaio;
+  pontosMundo(lista).forEach(function(c){
+    const d=vt.distanceTo(paraTela(c.p));
+    if(d<dmin){ dmin=d; melhor=c; }
+  });
+  if(melhor){ imaAtivo=melhor; return melhor.p.clone(); }
+  return v;
+}
+let prev=null, pivotUser=null, pivotLivre=null;
+function pivotAtual(){
+  if(pivotUser) return pivotUser.clone();
+  const a=sel[0].body.position, b=sel[1].body.position;
+  return new THREE.Vector3((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);
+}
+// põe o pivô na superfície de contato entre as duas peças
+function noContato(){
+  if(sel.length!==2) return;
+  const A=sel[0], B=sel[1];
+  const pa=new THREE.Vector3(A.body.position.x,A.body.position.y,A.body.position.z);
+  const pb=new THREE.Vector3(B.body.position.x,B.body.position.y,B.body.position.z);
+  const dir=new THREE.Vector3().subVectors(pb,pa).normalize();
+  const h1=new THREE.Raycaster(pa,dir).intersectObject(B.mesh,true);
+  const h2=new THREE.Raycaster(pb,dir.clone().negate()).intersectObject(A.mesh,true);
+  let p=null;
+  if(h1.length&&h2.length) p=h1[0].point.clone().add(h2[0].point).multiplyScalar(0.5);
+  else if(h1.length) p=h1[0].point.clone();
+  else if(h2.length) p=h2[0].point.clone();
+  if(p){ pivotUser=p; verPrevia(); }
+}
+function verPrevia(){
+  if(prev){ scene.remove(prev); prev=null; }
+  if(sel.length!==2) return;
+  const a=sel[0].body.position, b=sel[1].body.position;
+  const mid=pivotAtual();
+  prev=new THREE.Group();
+  const bola=mkMarcador('ball',true); bola.position.copy(mid); prev.add(bola);
+  prev.userData.bola=bola;
+  const eixo=mkMarcador('hinge',true); porMarcador(eixo,'hinge',mid,dirDeAng(novoAz,novoEl)); prev.add(eixo);
+  // pontos notáveis: onde a junta tende a fazer sentido
+  if(imanOn) pontosMundo(sel).forEach(function(c){
+    const on = imaAtivo && c.p.distanceTo(imaAtivo.p)<1e-9;
+    const d=new THREE.Mesh(new THREE.SphereGeometry(on?0.014:0.007,10,8),
+      new THREE.MeshBasicMaterial({color:on?0x7ee06a:0x66707e,
+        transparent:true,opacity:on?1:0.5}));
+    d.position.copy(c.p); prev.add(d);
+  });
+  // linhas do pivô até CADA peça: mostra a relação com as duas
+  [[a,0x4a90d9],[b,0xd9a04a]].forEach(function(par){
+    const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+      [mid.clone(), new THREE.Vector3(par[0].x,par[0].y,par[0].z)]),
+      new THREE.LineDashedMaterial({color:par[1],dashSize:0.015,gapSize:0.012}));
+    l.computeLineDistances(); prev.add(l);
+  });
+  scene.add(prev);
+}
+
+let asmSeq=0;
+function aplicarGrupo(p){
+  if(p.asm===null){ p.body.collisionFilterGroup=2; p.body.collisionFilterMask=-1; return; }
+  const G=1<<((p.asm%28)+2);
+  p.body.collisionFilterGroup=G; p.body.collisionFilterMask=-1 & ~G;
+}
+function unir(a,b){
+  let k;
+  if(a.asm===null && b.asm===null) k=asmSeq++;
+  else if(a.asm===null) k=b.asm;
+  else if(b.asm===null) k=a.asm;
+  else k=Math.min(a.asm,b.asm);
+  const velho=(a.asm!==null&&b.asm!==null)?Math.max(a.asm,b.asm):null;
+  parts.forEach(function(p){ if(velho!==null&&p.asm===velho) p.asm=k; });
+  a.asm=k; b.asm=k;
+  parts.forEach(aplicarGrupo);
+}
+
+const ray=new THREE.Raycaster(), ptr=new THREE.Vector2();
+let selLink=null;
+function pickLink(cx,cy){
+  const r=rend.domElement.getBoundingClientRect();
+  ptr.x=((cx-r.left)/r.width)*2-1; ptr.y=-((cy-r.top)/r.height)*2+1;
+  ray.setFromCamera(ptr,cam);
+  for(let i=0;i<links.length;i++)
+    if(links[i].mk && ray.intersectObject(links[i].mk,true).length) return links[i];
+  return null;
+}
+function pick(cx,cy){
+  const r=rend.domElement.getBoundingClientRect();
+  ptr.x=((cx-r.left)/r.width)*2-1; ptr.y=-((cy-r.top)/r.height)*2+1;
+  ray.setFromCamera(ptr,cam);
+  for(let i=0;i<parts.length;i++) if(ray.intersectObject(parts[i].mesh,true).length) return parts[i];
+  return null;
+}
+function toggle(p){
+  if(sel.indexOf(p)>=0) sel=sel.filter(x=>x!==p);
+  else { sel.push(p); if(sel.length>2) sel.shift(); }
+  pivotUser=null; pivotLivre=null; modoPivo=false;   // par novo, pivô volta ao automático
+  paint(); ui();
+}
+function paint(){
+  links.forEach(function(l){ if(!l.mk) return;
+    const cor=(l.motor&&l.motor.on)?COR.motor:COR[l.kind];
+    l.mk.traverse(function(o){ if(o.material&&o.material.color) o.material.color.setHex(cor); });
+    l.mk.scale.setScalar(l===selLink?1.35:1); });
+  parts.forEach(p=>{ const i=sel.indexOf(p);
+    p.mesh.traverse(o=>{ if(o.material) o.material.emissive=new THREE.Color(i===0?0x2b4a70:i===1?0x6a4a20:0x000000); }); });
+}
+// peças ligadas formam UM bloco: percorre o grafo de ligações
+function grupoDe(p){
+  const vis=[p], fila=[p];
+  while(fila.length){
+    const cur=fila.pop();
+    links.forEach(function(l){
+      const o = (l.pa===cur)?l.pb : (l.pb===cur)?l.pa : null;
+      if(o && vis.indexOf(o)<0){ vis.push(o); fila.push(o); }
+    });
+  }
+  return vis;
+}
+// move o bloco inteiro, com as juntas junto
+function moverGrupo(g,dx,dy,dz){
+  g.forEach(function(o){
+    o.body.position.x+=dx; o.body.position.y+=dy; o.body.position.z+=dz;
+    o.body.velocity.set(0,0,0); o.body.angularVelocity.set(0,0,0);
+    o.home=o.body.position.clone();
+  });
+  links.forEach(function(l){
+    if(g.indexOf(l.pa)>=0 && g.indexOf(l.pb)>=0) l.pivW.add(new THREE.Vector3(dx,dy,dz));
+  });
+}
+// gira o bloco em torno do centro da peça editada
+function girarGrupo(p,qNovo){
+  const g=grupoDe(p);
+  const dq=qNovo.mult(p.body.quaternion.inverse());
+  const c=p.body.position.clone();
+  g.forEach(function(o){
+    if(o===p) return;
+    const r=o.body.position.vsub(c);
+    const r2=dq.vmult(r);
+    o.body.position.copy(c.vadd(r2));
+    o.body.quaternion.copy(dq.mult(o.body.quaternion));
+    const e=new CANNON.Vec3(); o.body.quaternion.toEuler(e);
+    o.rot.x=e.x*180/Math.PI; o.rot.y=e.y*180/Math.PI; o.rot.z=e.z*180/Math.PI;
+    o.body.velocity.set(0,0,0); o.body.angularVelocity.set(0,0,0);
+    o.home=o.body.position.clone(); o.hq=o.body.quaternion.clone();
+  });
+  p.body.quaternion.copy(qNovo);
+  links.forEach(function(l){
+    if(g.indexOf(l.pa)<0 || g.indexOf(l.pb)<0) return;
+    const rv=new CANNON.Vec3(l.pivW.x-c.x, l.pivW.y-c.y, l.pivW.z-c.z);
+    const r2=dq.vmult(rv);
+    l.pivW.set(c.x+r2.x, c.y+r2.y, c.z+r2.z);
+    l.axAz+=0; // eixo é recomputado a partir do corpo em refazer
+  });
+  g.forEach(function(o){ if(o!==p) return; o.hq=o.body.quaternion.clone(); });
+}
+function sync(){
+  parts.forEach(p=>{ p.mesh.position.copy(p.body.position); p.mesh.quaternion.copy(p.body.quaternion); });
+  links.forEach(function(l){ if(!l.mk) return;
+    const w=l.pa.body.pointToWorldFrame(l.pivA);
+    const pos=new THREE.Vector3(w.x,w.y,w.z);
+    let ax=null;
+    if((l.kind==='hinge'||l.kind==='pino'||l.kind==='trilho')&&l.axL){ const a=l.pa.body.quaternion.vmult(l.axL);
+      ax=new THREE.Vector3(a.x,a.y,a.z); }
+    porMarcador(l.mk,l.kind,pos,ax||new THREE.Vector3(0,1,0));
+    if(l.mkB){ const wb=l.pb.body.pointToWorldFrame(l.pivB);
+      l.mkB.position.set(wb.x,wb.y,wb.z); } });
+}
+
+let modoPivo=false;
+function pontoNaSuperficieDe(lista,cx,cy){
+  const r=rend.domElement.getBoundingClientRect();
+  ptr.x=((cx-r.left)/r.width)*2-1; ptr.y=-((cy-r.top)/r.height)*2+1;
+  ray.setFromCamera(ptr,cam);
+  for(let i=0;i<lista.length;i++){
+    const h=ray.intersectObject(lista[i].mesh,true);
+    if(h.length) return h[0].point.clone();   // ponto exato na superfície tocada
+  }
+  return null;
+}
+function pontoNaSuperficie(cx,cy){ return pontoNaSuperficieDe(sel,cx,cy); }
+let last=null,drag=null,pinch=null,cen=null,panning=false,moved=0,dragPiv=false,dragLink=false;
+function pegouPivo(cx,cy){
+  if(!prev||!prev.userData.bola) return false;
+  const r=rend.domElement.getBoundingClientRect();
+  ptr.x=((cx-r.left)/r.width)*2-1; ptr.y=-((cy-r.top)/r.height)*2+1;
+  ray.setFromCamera(ptr,cam);
+  return ray.intersectObject(prev.userData.bola,true).length>0;
+}
+function pts(e){ return e.touches?Array.prototype.map.call(e.touches,t=>({x:t.clientX,y:t.clientY})):[{x:e.clientX,y:e.clientY}]; }
+function down(e){ const P=pts(e); moved=0;
+  if(P.length===2){ pinch=Math.hypot(P[0].x-P[1].x,P[0].y-P[1].y);
+    cen={x:(P[0].x+P[1].x)/2,y:(P[0].y+P[1].y)/2}; drag=null; last=null; return; }
+  panning = !!(e.shiftKey || e.button===2 || e.button===1);
+  last=P[0];
+  dragPiv = (!running && !panning && sel.length===2 && pegouPivo(P[0].x,P[0].y));
+  dragLink = (!running && !panning && selLink && pickLink(P[0].x,P[0].y)===selLink);
+  if(modoPivo && (sel.length===2||selLink) && !dragPiv && !dragLink){ drag=null; return; }
+  drag=(running||panning||dragPiv)?null:pick(P[0].x,P[0].y); }
+function move(e){ const P=pts(e);
+  if(P.length===2&&pinch){ if(e.cancelable)e.preventDefault();
+    const dd=Math.hypot(P[0].x-P[1].x,P[0].y-P[1].y);
+    const nc={x:(P[0].x+P[1].x)/2,y:(P[0].y+P[1].y)/2};
+    if(dd>0){ orb.d=Math.max(0.3,Math.min(14,orb.d*pinch/dd)); pinch=dd; }
+    if(cen) pan(nc.x-cen.x, nc.y-cen.y);
+    cen=nc; placeCam(); return; }
+  if(!last) return; if(e.cancelable) e.preventDefault();
+  const dx=P[0].x-last.x, dy=P[0].y-last.y; moved+=Math.abs(dx)+Math.abs(dy);
+  if(dragLink&&selLink){
+    const s=orb.d*0.0024;
+    const fwd=new THREE.Vector3(); cam.getWorldDirection(fwd);
+    const rv=new THREE.Vector3().crossVectors(fwd,new THREE.Vector3(0,1,0)).normalize();
+    const upv=new THREE.Vector3().crossVectors(rv,fwd).normalize();
+    if(!selLink._livre) selLink._livre=selLink.pivW.clone();
+    selLink._livre.addScaledVector(rv,dx*s); selLink._livre.addScaledVector(upv,-dy*s);
+    selLink.pivW.copy(comIma(selLink._livre.clone(),[selLink.pa,selLink.pb]));
+    refazer(selLink);
+  } else if(dragPiv){
+    const s=orb.d*0.0024;
+    const fwd=new THREE.Vector3(); cam.getWorldDirection(fwd);
+    const rv=new THREE.Vector3().crossVectors(fwd,new THREE.Vector3(0,1,0)).normalize();
+    const upv=new THREE.Vector3().crossVectors(rv,fwd).normalize();
+    if(!pivotLivre) pivotLivre=pivotAtual();
+    pivotLivre.addScaledVector(rv,dx*s); pivotLivre.addScaledVector(upv,-dy*s);
+    pivotUser=comIma(pivotLivre.clone(),sel);   // o ímã NÃO realimenta o arrasto
+    verPrevia();
+  } else if(drag){
+    const s=orb.d*0.0024;
+    const fwd=new THREE.Vector3(); cam.getWorldDirection(fwd);
+    const rv=new THREE.Vector3().crossVectors(fwd,new THREE.Vector3(0,1,0)).normalize();
+    const g=grupoDe(drag);
+    const ax=rv.x*dx*s, az=rv.z*dx*s;
+    let ay=-dy*s;
+    const menor=Math.min.apply(null,g.map(o=>o.body.position.y));
+    if(menor+ay<0.02) ay=0.02-menor;      // o bloco todo respeita o chão
+    moverGrupo(g,ax,ay,az); sync();
+  } else if(panning){ pan(dx,dy);
+  } else { orb.az-=dx*0.008; orb.el=Math.max(-0.2,Math.min(1.4,orb.el+dy*0.006)); placeCam(); }
+  last=P[0]; }
+function up(){ if(dragLink){ dragLink=false; last=null; moved=0;
+    if(selLink) selLink._livre=null; return; }
+  if(dragPiv){ dragPiv=false; last=null; moved=0; pivotLivre=null; return; }
+  if(modoPivo && moved<8 && last && selLink){
+    const s=pontoNaSuperficieDe([selLink.pa,selLink.pb],last.x,last.y);
+    if(s){ selLink._livre=s.clone();
+      selLink.pivW.copy(comIma(s.clone(),[selLink.pa,selLink.pb])); refazer(selLink); last=null; return; }
+  }
+  if(modoPivo && moved<8 && last && sel.length===2){
+    const s=pontoNaSuperficie(last.x,last.y);
+    if(s){ pivotLivre=s.clone(); pivotUser=comIma(s.clone(),sel); verPrevia(); last=null; return; }
+  }
+  if(moved<8&&last){
+    const lk=pickLink(last.x,last.y);
+    if(lk){ selLink=(selLink===lk)?null:lk; sel=[]; paint(); ui(); last=null; drag=null; return; }
+    const p=drag||pick(last.x,last.y);
+    if(p){ selLink=null; toggle(p); } else { sel=[]; selLink=null; paint(); ui(); } }
+  if(dragPiv){ dragPiv=false; last=null; return; }
+  last=null; drag=null; pinch=null; cen=null; panning=false; }
+stage.addEventListener('contextmenu',function(e){e.preventDefault();});
+stage.addEventListener('mousedown',down); stage.addEventListener('touchstart',down,{passive:false});
+window.addEventListener('mousemove',move); stage.addEventListener('touchmove',move,{passive:false});
+window.addEventListener('mouseup',up); stage.addEventListener('touchend',up);
+stage.addEventListener('wheel',function(e){e.preventDefault();orb.d=Math.max(0.3,Math.min(14,orb.d*(e.deltaY>0?1.1:0.9)));placeCam();},{passive:false});
+
+const shelf=document.getElementById('shelf');
+Object.keys(CAT).forEach(function(k){ const b=document.createElement('button');
+  b.textContent=CAT[k].nome; b.onclick=function(){ addPart(k); }; shelf.appendChild(b); });
+
+function slider(box,label,min,max,step,val,fmt,onch){
+  const row=document.createElement('div'); row.className='sl';
+  const lab=document.createElement('label'); lab.textContent=label;
+  const inp=document.createElement('input'); inp.type='range';
+  inp.min=min; inp.max=max; inp.step=step; inp.value=val;
+  const sp=document.createElement('span');
+  function show(v){ sp.textContent=fmt(v); }
+  inp.addEventListener('input',function(){ show(+inp.value); try{ onch(+inp.value); }catch(e){ shout(label+': '+e.message); } });
+  show(val); row.appendChild(lab); row.appendChild(inp); row.appendChild(sp); box.appendChild(row);
+}
+function ui(){
+  const bar=document.getElementById('bar'); bar.innerHTML='';
+  const one=sel.length===1?sel[0]:null;
+  document.getElementById('editor').style.display=one?'block':'none';
+
+  if(selLink){
+    const NOME={weld:'SOLDA',ball:'ESFÉRICA',hinge:'DOBRADIÇA',pino:'PINO',trilho:'TRILHO'};
+    const c=document.createElement('span'); c.className='chip';
+    c.textContent=NOME[selLink.kind]+' · '+CAT[selLink.pa.tipo].nome+' ↔ '+CAT[selLink.pb.tipo].nome;
+    bar.appendChild(c);
+    const bp=document.createElement('button');
+    bp.textContent=(modoPivo?'● ':'')+'⌖ tocar p/ mover';
+    bp.className=modoPivo?'acc':'';
+    bp.onclick=function(){ modoPivo=!modoPivo; ui(); }; bar.appendChild(bp);
+    [['weld','Solda'],['ball','Esférica'],['hinge','Dobradiça'],['pino','Pino'],
+     ['trilho','Trilho']].forEach(function(x){
+      const b=document.createElement('button');
+      b.className=selLink.kind===x[0]?'acc':''; b.textContent=x[1];
+      b.onclick=function(){ selLink.kind=x[0]; refazer(selLink); }; bar.appendChild(b);
+    });
+    if(selLink.kind!=='weld'&&selLink.kind!=='ball'){
+      const lab=document.createElement('span'); lab.style.cssText='font-size:12px;color:#8b8d98';
+      lab.textContent='eixo'; bar.appendChild(lab);
+      [['X',0,0],['Y',0,90],['Z',90,0]].forEach(function(p){ const b=document.createElement('button');
+        const on=Math.abs(selLink.axAz-p[1])<1&&Math.abs(selLink.axEl-p[2])<1;
+        b.className='ax'+(on?' on':''); b.textContent=p[0];
+        b.onclick=function(){ selLink.axAz=p[1]; selLink.axEl=p[2]; refazer(selLink); };
+        bar.appendChild(b); });
+      [['peça 1','pa'],['peça 2','pb']].forEach(function(p){ const b=document.createElement('button');
+        b.className='ax'; b.textContent='↗ '+p[0];
+        b.onclick=function(){ const a=angDeDir(eixoDaPeca(selLink[p[1]]));
+          selLink.axAz=a.az; selLink.axEl=a.el; refazer(selLink); };
+        bar.appendChild(b); });
+    }
+    if(selLink.kind==='hinge'||selLink.kind==='pino'){
+      const bm=document.createElement('button');
+      bm.className=selLink.motor.on?'go':''; bm.textContent=selLink.motor.on?'⚙ motor ligado':'⚙ motorizar';
+      bm.onclick=function(){ selLink.motor.on=!selLink.motor.on; aplicarMotor(selLink); paint(); ui(); verMotores(); };
+      bar.appendChild(bm);
+    }
+    const br=document.createElement('button'); br.textContent='Remover';
+    br.onclick=function(){ world.removeConstraint(selLink.c);
+      if(selLink.mk) scene.remove(selLink.mk); if(selLink.mkB) scene.remove(selLink.mkB);
+      links=links.filter(x=>x!==selLink); selLink=null; modoPivo=false; ui(); };
+    bar.appendChild(br);
+    document.getElementById('stat').textContent=parts.length+' pe\u00e7as \u00b7 '+links.length+' liga\u00e7\u00f5es';
+    if(selLink.kind!=='weld'&&selLink.kind!=='ball'){
+      const ed=document.getElementById('editor'); ed.style.display='block';
+      document.getElementById('selName').textContent=NOME[selLink.kind];
+      const box=document.getElementById('params'); box.innerHTML='';
+      const t=document.createElement('div');
+      t.style.cssText='font-size:11px;letter-spacing:.08em;color:#8b8d98;margin-bottom:2px';
+      t.textContent='DIREÇÃO DO EIXO'; box.appendChild(t);
+      slider(box,'azimute',-180,180,1,selLink.axAz,v=>v.toFixed(0)+' °',
+        function(v){ selLink.axAz=v; refazer(selLink); });
+      slider(box,'elevação',-90,90,1,selLink.axEl,v=>v.toFixed(0)+' °',
+        function(v){ selLink.axEl=v; refazer(selLink); });
+      const rb=document.getElementById('rots'); rb.innerHTML='';
+      if(selLink.motor.on){
+        const t2=document.createElement('div');
+        t2.style.cssText='font-size:11px;letter-spacing:.08em;color:#8b8d98;margin:6px 0 2px';
+        t2.textContent='MOTOR'; rb.appendChild(t2);
+        slider(rb,'velocidade',-8,8,0.25,selLink.motor.vel,v=>v.toFixed(2)+' rad/s',
+          function(v){ selLink.motor.vel=v; aplicarMotor(selLink); });
+        slider(rb,'força',0,200,1,selLink.motor.forca,v=>v.toFixed(0),
+          function(v){ selLink.motor.forca=v; aplicarMotor(selLink); });
+        const n=document.createElement('div');
+        n.style.cssText='font-size:11px;color:#8b8d98;margin-top:2px';
+        n.textContent='força: escala do solver, não N·m'; rb.appendChild(n);
+      }
+    }
+    verPrevia(); verMotores(); return;
+  }
+  if(sel.length===0){
+    const s=document.createElement('span'); s.style.cssText='font-size:12px;color:#8b8d98';
+    s.textContent='Toque numa peça ou numa junta'; bar.appendChild(s);
+  } else if(sel.length===1){
+    const s=document.createElement('span'); s.style.cssText='font-size:12px;color:#8b8d98';
+    s.textContent='Selecionada: '+CAT[one.tipo].nome+' #'+one.id+' · toque em outra para ligar';
+    bar.appendChild(s);
+  } else {
+    const c=document.createElement('span'); c.className='chip';
+    c.textContent=CAT[sel[0].tipo].nome+' #'+sel[0].id+' + '+CAT[sel[1].tipo].nome+' #'+sel[1].id;
+    bar.appendChild(c);
+    [['weld','Soldar'],['ball','Esférica'],['hinge','Dobradiça'],['pino','Pino'],
+     ['trilho','Trilho']].forEach(function(x){
+      const b=document.createElement('button'); b.className='acc'; b.textContent=x[1];
+      b.onclick=function(){ try{ join(x[0]); }catch(e){ shout('ligar: '+e.message); } };
+      bar.appendChild(b);
+    });
+    const cc=document.createElement('button'); cc.textContent='⊹ alinhar centros';
+    cc.className='go'; cc.style.cssText='width:100%;margin-top:2px';
+    cc.onclick=function(){ try{ centrarEm(['x','y','z']); }catch(e){ shout('centrar: '+e.message); } };
+    bar.appendChild(cc);
+    const be=document.createElement('span');
+    be.style.cssText='font-size:12px;color:#8b8d98'; be.textContent='⇋ espelhar';
+    bar.appendChild(be);
+    ['X','Y','Z'].forEach(function(n,i){ const b=document.createElement('button');
+      b.className='ax'; b.textContent=n;
+      b.onclick=function(){ try{ espelhar(i); }catch(e){ shout('espelhar: '+e.message); } };
+      bar.appendChild(b); });
+    const bp=document.createElement('button');
+    bp.textContent=(modoPivo?'● ':'')+'⌖ tocar p/ posicionar';
+    bp.className=modoPivo?'acc':'';
+    bp.onclick=function(){ modoPivo=!modoPivo; ui(); }; bar.appendChild(bp);
+    const bi=document.createElement('button');
+    bi.className=imanOn?'acc':''; bi.textContent=(imanOn?'🧲 ímã':'🧲 ímã off');
+    bi.onclick=function(){ imanOn=!imanOn; imaAtivo=null; verPrevia(); ui(); };
+    bar.appendChild(bi);
+    if(imaAtivo){ const t=document.createElement('span');
+      t.style.cssText='font-size:12px;color:#7ee06a'; t.textContent='→ '+imaAtivo.n;
+      bar.appendChild(t); }
+    const bc=document.createElement('button'); bc.textContent='⌖ no contato';
+    bc.onclick=function(){ try{ noContato(); }catch(e){ shout('contato: '+e.message); } };
+    bar.appendChild(bc);
+    const ba=document.createElement('button'); ba.textContent='↺ centro';
+    ba.onclick=function(){ pivotUser=null; pivotLivre=null; verPrevia(); }; bar.appendChild(ba);
+    const lab=document.createElement('span'); lab.style.cssText='font-size:12px;color:#8b8d98';
+    lab.textContent='eixo'; bar.appendChild(lab);
+    [['X',0,0],['Y',0,90],['Z',90,0]].forEach(function(p){ const b=document.createElement('button');
+      const on=Math.abs(novoAz-p[1])<1&&Math.abs(novoEl-p[2])<1;
+      b.className='ax'+(on?' on':''); b.textContent=p[0];
+      b.onclick=function(){ novoAz=p[1]; novoEl=p[2]; ui(); }; bar.appendChild(b); });
+    [['peça 1',0],['peça 2',1]].forEach(function(p){ const b=document.createElement('button');
+      b.className='ax'; b.textContent='↗ '+p[0];
+      b.onclick=function(){ const a=angDeDir(eixoDaPeca(sel[p[1]])); novoAz=a.az; novoEl=a.el; ui(); };
+      bar.appendChild(b); });
+  }
+
+  if(one){
+    document.getElementById('selName').textContent=CAT[one.tipo].nome.toUpperCase()+' #'+one.id;
+    const box=document.getElementById('params'); box.innerHTML='';
+    Object.keys(CAT[one.tipo].p).forEach(function(k){
+      const d=CAT[one.tipo].p[k];
+      slider(box,k,d.r[0],d.r[1],(d.r[1]-d.r[0])/100,one.par[k],
+        v=>v.toFixed(d.u==='m'?3:0)+' '+d.u,
+        function(v){ one.par[k]=v; rebuild(one); if(one.tipo==='placa') area(one); });
+    });
+    const a=document.createElement('div'); a.id='areaTxt';
+    a.style.cssText='font-size:12px;color:#8b8d98;margin-top:2px'; box.appendChild(a);
+    if(one.tipo==='placa') area(one);
+    const bd=document.getElementById('btDup');
+    if(bd) bd.textContent = (grupoDe(one).length>1) ? 'Duplicar montagem' : 'Duplicar';
+    const rb=document.getElementById('rots'); rb.innerHTML='';
+    ['x','y','z'].forEach(function(ax){
+      slider(rb,'giro '+ax.toUpperCase(),-180,180,5,one.rot[ax],v=>v.toFixed(0)+' \u00b0',
+        function(v){ one.rot[ax]=v; setRot(one); });
+    });
+    montarNudge();          // DEPOIS de limpar #rots, senão é apagado
+  }
+  document.getElementById('stat').textContent=parts.length+' pe\u00e7as \u00b7 '+links.length+' liga\u00e7\u00f5es';
+  verPrevia(); verMotores();
+}
+// motores ficam sempre acessíveis: regular ao vivo é o ponto
+function verMotores(){
+  const pn=document.getElementById('painelMotores'), box=document.getElementById('motores');
+  const mot=links.filter(l=>l.motor&&l.motor.on);
+  pn.style.display=mot.length?'block':'none';
+  if(!mot.length) return;
+  box.innerHTML='';
+  const NOME={hinge:'Dobradiça',pino:'Pino',trilho:'Trilho'};
+  mot.forEach(function(l){
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:6px;margin:4px 0';
+    const lab=document.createElement('label');
+    lab.style.cssText='font-size:12px;color:#a8c4a5;width:82px;cursor:pointer';
+    lab.textContent=(NOME[l.kind]||l.kind)+' '+l.pa.id+'\u2192'+l.pb.id;
+    lab.onclick=function(){ selLink=l; sel=[]; paint(); ui(); };
+    const s=(l.motor.inv?-1:1);
+    // botões MOMENTÂNEOS: agem só enquanto pressionados
+    function press(txt,dir){
+      const b=document.createElement('button');
+      b.textContent=txt; b.style.cssText='padding:7px 14px;font-size:15px;flex:1;user-select:none;touch-action:none';
+      const liga=function(e){ if(e.cancelable)e.preventDefault(); if(!running) B.play(); comandar(l,dir*s);
+        b.style.background='#2f4a28'; };
+      const desliga=function(){ comandar(l,0); b.style.background=''; };
+      b.addEventListener('mousedown',liga); b.addEventListener('touchstart',liga,{passive:false});
+      b.addEventListener('mouseup',desliga); b.addEventListener('mouseleave',desliga);
+      b.addEventListener('touchend',desliga); b.addEventListener('touchcancel',desliga);
+      return b;
+    }
+    const mag=document.createElement('input'); mag.type='range';
+    mag.min=0.5; mag.max=8; mag.step=0.1; mag.value=l.motor.mag;
+    mag.style.cssText='width:64px;min-width:0';
+    mag.title='velocidade';
+    mag.addEventListener('input',function(){ l.motor.mag=+mag.value; if(l.motor.ativo) comandar(l, (l.motor.vel<0?-1:1)); });
+    row.appendChild(lab);
+    row.appendChild(press('\u25c0', -1));
+    row.appendChild(press('\u25b6', 1));
+    row.appendChild(mag);
+    box.appendChild(row);
+  });
+}
+function montarNudge(){
+  const box=document.getElementById('rots');
+  const t=document.createElement('div');
+  t.style.cssText='font-size:11px;letter-spacing:.08em;color:#8b8d98;margin:8px 0 2px';
+  t.textContent='MOVER'; box.appendChild(t);
+  const passo=0.02;
+  const grid=document.createElement('div');
+  grid.style.cssText='display:grid;grid-template-columns:repeat(3,40px);gap:4px';
+  function bt(txt,dx,dy,dz,col){
+    const b=document.createElement('button'); b.textContent=txt;
+    b.style.cssText='padding:8px 0;font-size:15px;grid-column:'+col;
+    b.onclick=function(){ nudge(dx,dy,dz); }; return b;
+  }
+  grid.appendChild(bt('\u25b2',0,0,-passo,'2'));        // frente (−z)
+  grid.appendChild(bt('\u25c0',-passo,0,0,'1'));
+  grid.appendChild(bt('\u25bc',0,0,passo,'2'));         // trás
+  grid.appendChild(bt('\u25b6',passo,0,0,'3'));
+  box.appendChild(grid);
+  const vg=document.createElement('div');
+  vg.style.cssText='display:flex;gap:4px;margin-top:4px';
+  const up=document.createElement('button'); up.textContent='\u2b06 sobe'; up.style.cssText='flex:1;padding:7px 0;font-size:13px';
+  up.onclick=function(){ nudge(0,passo,0); };
+  const dn=document.createElement('button'); dn.textContent='\u2b07 desce'; dn.style.cssText='flex:1;padding:7px 0;font-size:13px';
+  dn.onclick=function(){ nudge(0,-passo,0); };
+  vg.appendChild(up); vg.appendChild(dn); box.appendChild(vg);
+}
+function area(p){ const t=document.getElementById('areaTxt');
+  if(t) t.textContent='\u00e1rea = '+(p.par.larg*p.par.prof).toFixed(3)+' m\u00b2'; }
+
+window.B={
+  play:function(){ running=!running; document.getElementById('playBtn').textContent=running?'\u275a\u275a Pausar':'\u25b6 Testar';
+    const p2=document.getElementById('playBtn2'); if(p2) p2.textContent=running?'\u275a\u275a':'\u25b6';
+    if(running) parts.forEach(p=>{p.home=p.body.position.clone();p.hq=p.body.quaternion.clone();}); },
+  reset:function(){ running=false; document.getElementById('playBtn').textContent='\u25b6 Testar';
+    const p2=document.getElementById('playBtn2'); if(p2) p2.textContent='\u25b6';
+    parts.forEach(p=>{p.body.position.copy(p.home);p.body.quaternion.copy(p.hq);
+      p.body.velocity.set(0,0,0);p.body.angularVelocity.set(0,0,0);}); sync(); },
+  clear:function(){ running=false; document.getElementById('playBtn').textContent='\u25b6 Testar';
+    const p2=document.getElementById('playBtn2'); if(p2) p2.textContent='\u25b6';
+    links.forEach(function(l){ world.removeConstraint(l.c); if(l.mk) scene.remove(l.mk); if(l.mkB) scene.remove(l.mkB); }); links=[];
+    parts.forEach(p=>{world.removeBody(p.body);scene.remove(p.mesh);});
+    parts=[];sel=[];ui(); },
+  del:function(){ const p=sel[0]; if(!p) return;
+    links=links.filter(function(l){ if(l.a===p.id||l.b===p.id){world.removeConstraint(l.c); if(l.mk)scene.remove(l.mk); if(l.mkB)scene.remove(l.mkB); return false;} return true;});
+    world.removeBody(p.body); scene.remove(p.mesh); parts=parts.filter(x=>x!==p); sel=[]; paint(); ui(); },
+  dup:function(){ const p=sel[0]; if(!p) return;
+    if(grupoDe(p).length>1){ duplicarBloco(p); return; }   // ligada -> clona o bloco
+    const q=addPart(p.tipo,new CANNON.Vec3(p.body.position.x+0.16,p.body.position.y,p.body.position.z));
+    Object.keys(p.par).forEach(k=>q.par[k]=p.par[k]);
+    q.rot.x=p.rot.x; q.rot.y=p.rot.y; q.rot.z=p.rot.z;
+    rebuild(q); setRot(q); ui(); },
+  desel:function(){ sel=[]; paint(); ui(); },
+  zoom:function(f){ orb.d=Math.max(0.3,Math.min(14,orb.d*f)); placeCam(); },
+  verTudo:verTudo,
+  seguir:alvoSeguir,
+  centrarEm:centrarEm,
+  nudge:nudge,
+  centrar:function(){ centrar(sel[0]); },
+  join:join,
+  _dbg:function(){ return {parts:parts,links:links,sel:sel,selLink:selLink,cam:cam,scene:scene,
+                           pivotUser:pivotUser,
+                           setSel:function(a){ sel=a; paint(); ui(); }}; }
+};
+(function loop(){ requestAnimationFrame(loop);
+  if(running){ world.step(1/60); limitarTrilhos(); sync(); }
+  if(seguindo){ orb.t.lerp(new THREE.Vector3(seguindo.body.position.x,
+      seguindo.body.position.y, seguindo.body.position.z), 0.18); placeCam(); }
+  rend.render(scene,cam); })();
+resize(); ui();
+}catch(err){ shout('FALHA NA CARGA: '+err.message); }
+</script>
