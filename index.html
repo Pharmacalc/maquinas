@@ -42,21 +42,32 @@
     <div id="shelf" style="display:flex;gap:6px;flex-wrap:wrap"></div>
   </div>
 
+  <div id="modelosWrap" style="padding:9px 12px;border-top:1px solid #2c2d34;display:none">
+    <div style="font-size:11px;letter-spacing:.08em;color:#8b8d98;margin-bottom:6px">MEUS MODELOS</div>
+    <div id="modelos"></div>
+  </div>
+
   <div id="editor" style="padding:9px 12px;border-top:1px solid #2c2d34;display:none">
     <div style="font-size:11px;letter-spacing:.08em;color:#8b8d98;margin-bottom:6px"><span id="selName">—</span></div>
     <div id="params"></div>
     <div style="font-size:11px;letter-spacing:.08em;color:#8b8d98;margin:8px 0 2px">GIRO</div>
     <div id="rots"></div>
-    <div style="display:flex;gap:6px;margin-top:8px">
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
       <button onclick="B.centrar()">Centrar</button>
       <button id="btDup" onclick="B.dup()">Duplicar</button>
       <button onclick="B.del()">Remover</button>
       <button onclick="B.desel()">Soltar</button>
+      <button id="btGravar" onclick="B.toggleGravar()">💾 Gravar</button>
+    </div>
+    <div id="gravarForm" style="display:none;margin-top:8px;gap:6px">
+      <input id="gravarNome" type="text" placeholder="nome da peça" style="flex:1;min-width:0;background:#1e1f26;color:#e8e8ea;border:1px solid #383941;border-radius:7px;padding:7px 9px;font-size:13px">
+      <button onclick="B.confirmarGravar()">Salvar</button>
     </div>
   </div>
 
   <div style="padding:9px 12px;border-top:1px solid #2c2d34;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
     <button class="go" id="playBtn" onclick="B.play()">▶ Testar</button>
+    <button id="btDesfazer" onclick="B.desfazer()" style="opacity:0.4" disabled>↶ Desfazer</button>
     <button onclick="B.reset()">Reiniciar</button>
     <button onclick="B.clear()">Limpar</button>
     <span id="stat" style="margin-left:auto;font-size:12px;color:#8b8d98"></span>
@@ -323,6 +334,138 @@ function cursoDa(p){
   if(p.tipo==='arco') return p.par.raio*2;
   return 0.3;
 }
+
+// ═══ serializar / reconstruir: base comum de DESFAZER e GRAVAR PEÇA ═══
+function serializar(pecas,referencia){
+  const ids=pecas.map(function(p){return p.id;});
+  return {
+    partes:pecas.map(function(o){ return {
+      id:o.id, tipo:o.tipo, par:JSON.parse(JSON.stringify(o.par)), rot:Object.assign({},o.rot),
+      pos:{x:o.body.position.x-referencia.x,y:o.body.position.y-referencia.y,z:o.body.position.z-referencia.z},
+      quat:{x:o.body.quaternion.x,y:o.body.quaternion.y,z:o.body.quaternion.z,w:o.body.quaternion.w}
+    };}),
+    ligs:links.filter(function(l){ return ids.indexOf(l.a)>=0 && ids.indexOf(l.b)>=0; })
+      .map(function(l){ return {
+        kind:l.kind, a:l.a, b:l.b,
+        pivW:{x:l.pivW.x-referencia.x,y:l.pivW.y-referencia.y,z:l.pivW.z-referencia.z},
+        axAz:l.axAz, axEl:l.axEl, curso:l.curso, motor:Object.assign({},l.motor,{ativo:false,vel:0})
+      };})
+  };
+}
+function serializarTudo(){ return serializar(parts,{x:0,y:0,z:0}); }
+function serializarBloco(p){ return serializar(grupoDe(p),p.body.position); }
+function instanciarModelo(dados,origem){
+  const mapa={};
+  dados.partes.forEach(function(dp){
+    const p=addPart(dp.tipo,new CANNON.Vec3(origem.x+dp.pos.x,origem.y+dp.pos.y,origem.z+dp.pos.z));
+    Object.assign(p.par,dp.par); rebuild(p);
+    p.body.quaternion.set(dp.quat.x,dp.quat.y,dp.quat.z,dp.quat.w);
+    p.rot=Object.assign({},dp.rot);
+    p.home=p.body.position.clone(); p.hq=p.body.quaternion.clone();
+    mapa[dp.id]=p;
+  });
+  dados.ligs.forEach(function(dl){
+    const a=mapa[dl.a], b=mapa[dl.b]; if(!a||!b) return;
+    const dir=dirDeAng(dl.axAz,dl.axEl);
+    const pv=new THREE.Vector3(origem.x+dl.pivW.x,origem.y+dl.pivW.y,origem.z+dl.pivW.z);
+    const r=montarLigacao(a,b,dl.kind,pv,dir);
+    world.addConstraint(r.c); unir(a,b);
+    const mk=mkMarcador(dl.kind,false); scene.add(mk);
+    const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),new THREE.MeshBasicMaterial({color:0xd9a04a}));
+    scene.add(mkB);
+    const novo={c:r.c,kind:dl.kind,a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
+      pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv.clone(),curso:dl.curso,axAz:dl.axAz,axEl:dl.axEl,
+      motor:Object.assign({on:false,vel:0,mag:3,forca:30,ativo:false},dl.motor,{ativo:false,vel:0})};
+    links.push(novo); aplicarMotor(novo);
+  });
+  return dados.partes.length?mapa[dados.partes[0].id]:null;
+}
+function limparTudo(){
+  links.forEach(function(l){ world.removeConstraint(l.c); if(l.mk)scene.remove(l.mk); if(l.mkB)scene.remove(l.mkB); });
+  links=[];
+  parts.forEach(function(p){ world.removeBody(p.body); scene.remove(p.mesh); });
+  parts=[]; sel=[]; selLink=null; seguindo=null; pivotUser=null; pivotLivre=null;
+}
+
+// ═══ DESFAZER: pilha de estados, capturada ANTES de cada ação que muda a montagem ═══
+let undoStack=[];
+function snapshot(){
+  undoStack.push(serializarTudo());
+  if(undoStack.length>20) undoStack.shift();
+  atualizarBtDesfazer();
+}
+function desfazer(){
+  if(!undoStack.length) return;
+  const dados=undoStack.pop();
+  limparTudo();
+  instanciarModelo(dados,{x:0,y:0,z:0});
+  sync(); paint(); ui();
+  atualizarBtDesfazer();
+}
+function atualizarBtDesfazer(){
+  const b=document.getElementById('btDesfazer'); if(!b) return;
+  b.disabled=undoStack.length===0;
+  b.style.opacity=undoStack.length===0?'0.4':'1';
+}
+
+// ═══ GRAVAR PEÇA: localStorage funciona no GitHub Pages; no preview do Claude
+// (iframe isolado) pode falhar — detectamos e degradamos sem quebrar o app ═══
+let TEM_STORAGE=false;
+try{ const k='__t'+Date.now(); localStorage.setItem(k,'1'); localStorage.removeItem(k); TEM_STORAGE=true; }catch(e){}
+function carregarModelos(){
+  if(!TEM_STORAGE) return {};
+  try{ return JSON.parse(localStorage.getItem('bancada:modelos')||'{}'); }catch(e){ return {}; }
+}
+function salvarModelos(obj){
+  if(!TEM_STORAGE) return;
+  try{ localStorage.setItem('bancada:modelos',JSON.stringify(obj)); }catch(e){ shout('armazenamento: '+e.message); }
+}
+function gravarPeca(p,nome){
+  const dados=serializarBloco(p);
+  const modelos=carregarModelos();
+  modelos[nome]=dados;
+  salvarModelos(modelos);
+  renderModelos();
+}
+function apagarModelo(nome){
+  const modelos=carregarModelos();
+  delete modelos[nome];
+  salvarModelos(modelos);
+  renderModelos();
+}
+function inserirModelo(nome){
+  const modelos=carregarModelos();
+  const dados=modelos[nome]; if(!dados) return;
+  const origem={x:orb.t.x+(Math.random()-0.5)*0.1,y:orb.t.y+0.25,z:orb.t.z+(Math.random()-0.5)*0.1};
+  snapshot();
+  const raiz=instanciarModelo(dados,origem);
+  sel=raiz?[raiz]:[]; selLink=null; paint(); ui(); sync();
+}
+function renderModelos(){
+  const wrap=document.getElementById('modelosWrap');
+  const lista=document.getElementById('modelos');
+  if(!wrap||!lista) return;
+  const modelos=carregarModelos();
+  const nomes=Object.keys(modelos);
+  wrap.style.display=nomes.length?'block':'none';
+  lista.innerHTML='';
+  nomes.forEach(function(nome){
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;gap:4px;margin:3px 0';
+    const b=document.createElement('button'); b.textContent=nome;
+    b.style.cssText='flex:1;text-align:left';
+    b.onclick=function(){ try{ inserirModelo(nome); }catch(e){ shout('inserir modelo: '+e.message); } };
+    const x=document.createElement('button'); x.textContent='🗑';
+    x.style.cssText='padding:6px 10px';
+    let confirmando=false;
+    x.onclick=function(){
+      if(!confirmando){ confirmando=true; x.textContent='confirmar?';
+        setTimeout(function(){ confirmando=false; x.textContent='🗑'; },2500); return; }
+      apagarModelo(nome);
+    };
+    row.appendChild(b); row.appendChild(x); lista.appendChild(row);
+  });
+}
 function montarLigacao(a,b,kind,pivW,axDir){
   const mid=new CANNON.Vec3(pivW.x,pivW.y,pivW.z);
   const pa=a.body.pointToLocalFrame(mid), pb=b.body.pointToLocalFrame(mid);
@@ -408,6 +551,7 @@ function ramoDe(p,ancora){
   return vis;
 }
 function duplicarBloco(p){
+  snapshot();
   const grupo=grupoDe(p);                 // a montagem conexa inteira
   const off=new THREE.Vector3(0.18,0,0.18);
   const mapa=new Map();
@@ -444,6 +588,7 @@ function duplicarBloco(p){
 }
 function espelhar(eixo){
   if(sel.length!==2) return;
+  snapshot();
   const anc=sel[0], alvoP=sel[1];
   const n=eixoMundo(eixo);
   const pl=new THREE.Vector3(anc.body.position.x,anc.body.position.y,anc.body.position.z);
@@ -490,6 +635,7 @@ function espelhar(eixo){
 }
 function join(kind){
   if(sel.length!==2) return;
+  snapshot();
   const a=sel[0], b=sel[1];
   // pino: automático no centro da 2ª peça, no eixo dela. Sem posicionar nada.
   const P = (kind==='pino')
@@ -702,10 +848,14 @@ function toggle(p){
   paint(); ui();
 }
 function paint(){
+  const compacto=running;   // simulação rodando: some com hastes, sobra só o ponto
   links.forEach(function(l){ if(!l.mk) return;
     const cor=(l.motor&&l.motor.on)?COR.motor:COR[l.kind];
     l.mk.traverse(function(o){ if(o.material&&o.material.color) o.material.color.setHex(cor); });
-    l.mk.scale.setScalar(l===selLink?1.35:1); });
+    if(l.mk.userData.haste) l.mk.userData.haste.visible=!compacto;
+    if(l.mkB) l.mkB.visible=!compacto;
+    const base=compacto?0.5:1;
+    l.mk.scale.setScalar(l===selLink?base*1.35:base); });
   parts.forEach(p=>{ const i=sel.indexOf(p);
     p.mesh.traverse(o=>{ if(o.material) o.material.emissive=new THREE.Color(i===0?0x2b4a70:i===1?0x6a4a20:0x000000); }); });
 }
@@ -800,7 +950,8 @@ function down(e){ const P=pts(e); moved=0;
   dragPiv = (!running && !panning && sel.length===2 && pegouPivo(P[0].x,P[0].y));
   dragLink = (!running && !panning && selLink && pickLink(P[0].x,P[0].y)===selLink);
   if(modoPivo && (sel.length===2||selLink) && !dragPiv && !dragLink){ drag=null; return; }
-  drag=(running||panning||dragPiv)?null:pick(P[0].x,P[0].y); }
+  drag=(running||panning||dragPiv)?null:pick(P[0].x,P[0].y);
+  if(drag||dragPiv||dragLink) snapshot(); }
 function move(e){ const P=pts(e);
   if(P.length===2&&pinch){ if(e.cancelable)e.preventDefault();
     const dd=Math.hypot(P[0].x-P[1].x,P[0].y-P[1].y);
@@ -868,7 +1019,11 @@ stage.addEventListener('wheel',function(e){e.preventDefault();orb.d=Math.max(0.3
 
 const shelf=document.getElementById('shelf');
 Object.keys(CAT).forEach(function(k){ const b=document.createElement('button');
-  b.textContent=CAT[k].nome; b.onclick=function(){ addPart(k); }; shelf.appendChild(b); });
+  b.textContent=CAT[k].nome; b.onclick=function(){ snapshot(); addPart(k); }; shelf.appendChild(b); });
+const bMao=document.createElement('button'); bMao.className='acc';
+bMao.textContent='\ud83e\udd1a M\u00e3o rob\u00f3tica';
+bMao.onclick=function(){ B.maoRobotica(); };
+shelf.appendChild(bMao);
 
 function slider(box,label,min,max,step,val,fmt,onch){
   const row=document.createElement('div'); row.className='sl';
@@ -877,6 +1032,12 @@ function slider(box,label,min,max,step,val,fmt,onch){
   inp.min=min; inp.max=max; inp.step=step; inp.value=val;
   const sp=document.createElement('span');
   function show(v){ sp.textContent=fmt(v); }
+  let iniciado=false;
+  function marcaInicio(){ if(!iniciado){ iniciado=true; snapshot(); } }
+  inp.addEventListener('pointerdown',marcaInicio); inp.addEventListener('touchstart',marcaInicio,{passive:true});
+  inp.addEventListener('mousedown',marcaInicio);
+  inp.addEventListener('pointerup',function(){ iniciado=false; }); inp.addEventListener('touchend',function(){ iniciado=false; });
+  inp.addEventListener('mouseup',function(){ iniciado=false; });
   inp.addEventListener('input',function(){ show(+inp.value); try{ onch(+inp.value); }catch(e){ shout(label+': '+e.message); } });
   show(val); row.appendChild(lab); row.appendChild(inp); row.appendChild(sp); box.appendChild(row);
 }
@@ -898,7 +1059,7 @@ function ui(){
      ['trilho','Trilho']].forEach(function(x){
       const b=document.createElement('button');
       b.className=selLink.kind===x[0]?'acc':''; b.textContent=x[1];
-      b.onclick=function(){ selLink.kind=x[0]; refazer(selLink); ui(); }; bar.appendChild(b);
+      b.onclick=function(){ snapshot(); selLink.kind=x[0]; refazer(selLink); ui(); }; bar.appendChild(b);
     });
     if(selLink.kind!=='weld'&&selLink.kind!=='ball'){
       const lab=document.createElement('span'); lab.style.cssText='font-size:12px;color:#8b8d98';
@@ -906,12 +1067,12 @@ function ui(){
       [['X',0,0],['Y',0,90],['Z',90,0]].forEach(function(p){ const b=document.createElement('button');
         const on=Math.abs(selLink.axAz-p[1])<1&&Math.abs(selLink.axEl-p[2])<1;
         b.className='ax'+(on?' on':''); b.textContent=p[0];
-        b.onclick=function(){ selLink.axAz=p[1]; selLink.axEl=p[2]; refazer(selLink); ui(); };
+        b.onclick=function(){ snapshot(); selLink.axAz=p[1]; selLink.axEl=p[2]; refazer(selLink); ui(); };
         bar.appendChild(b); });
       [['peça 1','pa'],['peça 2','pb']].forEach(function(p){ const b=document.createElement('button');
         b.className='ax'; b.textContent='↗ '+p[0];
         b.onclick=function(){ const a=angDeDir(eixoDaPeca(selLink[p[1]]));
-          selLink.axAz=a.az; selLink.axEl=a.el; refazer(selLink); ui(); };
+          snapshot(); selLink.axAz=a.az; selLink.axEl=a.el; refazer(selLink); ui(); };
         bar.appendChild(b); });
     }
     if(selLink.kind==='hinge'||selLink.kind==='pino'){
@@ -921,7 +1082,7 @@ function ui(){
       bar.appendChild(bm);
     }
     const br=document.createElement('button'); br.textContent='Remover';
-    br.onclick=function(){ world.removeConstraint(selLink.c);
+    br.onclick=function(){ snapshot(); world.removeConstraint(selLink.c);
       if(selLink.mk) scene.remove(selLink.mk); if(selLink.mkB) scene.remove(selLink.mkB);
       links=links.filter(x=>x!==selLink); selLink=null; modoPivo=false; ui(); };
     bar.appendChild(br);
@@ -972,7 +1133,7 @@ function ui(){
     });
     const cc=document.createElement('button'); cc.textContent='⊹ alinhar centros';
     cc.className='go'; cc.style.cssText='width:100%;margin-top:2px';
-    cc.onclick=function(){ try{ centrarEm(['x','y','z']); }catch(e){ shout('centrar: '+e.message); } };
+    cc.onclick=function(){ try{ snapshot(); centrarEm(['x','y','z']); }catch(e){ shout('centrar: '+e.message); } };
     bar.appendChild(cc);
     const be=document.createElement('span');
     be.style.cssText='font-size:12px;color:#8b8d98'; be.textContent='⇋ espelhar';
@@ -1023,6 +1184,9 @@ function ui(){
     if(one.tipo==='placa') area(one);
     const bd=document.getElementById('btDup');
     if(bd) bd.textContent = (grupoDe(one).length>1) ? 'Duplicar montagem' : 'Duplicar';
+    const bg=document.getElementById('btGravar');
+    if(bg) bg.textContent = (grupoDe(one).length>1) ? '💾 Gravar montagem' : '💾 Gravar';
+    const gf=document.getElementById('gravarForm'); if(gf) gf.style.display='none';
     const rb=document.getElementById('rots'); rb.innerHTML='';
     ['x','y','z'].forEach(function(ax){
       slider(rb,'giro '+ax.toUpperCase(),-180,180,5,one.rot[ax],v=>v.toFixed(0)+' \u00b0',
@@ -1085,7 +1249,7 @@ function montarNudge(){
     const b=document.createElement('button'); b.textContent=txt;
     b.style.cssText='padding:10px 0;font-size:16px;grid-column:'+col+';touch-action:none;user-select:none';
     let timer=null;
-    function inicia(e){ if(e.cancelable)e.preventDefault(); nudge(dx,dy,dz);
+    function inicia(e){ if(e.cancelable)e.preventDefault(); snapshot(); nudge(dx,dy,dz);
       timer=setInterval(function(){ nudge(dx,dy,dz); },120); }   // segure p/ repetir
     function para(){ if(timer){ clearInterval(timer); timer=null; } }
     b.addEventListener('touchstart',inicia,{passive:false});
@@ -1105,7 +1269,7 @@ function montarNudge(){
     const b=document.createElement('button'); b.textContent=txt;
     b.style.cssText='flex:1;padding:10px 0;font-size:14px;touch-action:none;user-select:none';
     let timer=null;
-    function inicia(e){ if(e.cancelable)e.preventDefault(); nudge(0,dy,0);
+    function inicia(e){ if(e.cancelable)e.preventDefault(); snapshot(); nudge(0,dy,0);
       timer=setInterval(function(){ nudge(0,dy,0); },120); }
     function para(){ if(timer){ clearInterval(timer); timer=null; } }
     b.addEventListener('touchstart',inicia,{passive:false});
@@ -1120,25 +1284,107 @@ function montarNudge(){
 function area(p){ const t=document.getElementById('areaTxt');
   if(t) t.textContent='\u00e1rea = '+(p.par.larg*p.par.prof).toFixed(3)+' m\u00b2'; }
 
+// preset: mão robótica — palma + 4 dedos (3 falanges c/ dobradiça motorizada)
+// + polegar oponente (2 falanges, eixo de oposição em X)
+function montarMaoRobotica(){
+  snapshot();
+  function criarPeca(tipo,parOverrides,pos,rotDeg){
+    const p=addPart(tipo,new CANNON.Vec3(pos.x,pos.y,pos.z));
+    Object.assign(p.par,parOverrides);
+    rebuild(p);
+    p.rot.x=rotDeg.x; p.rot.y=rotDeg.y; p.rot.z=rotDeg.z;
+    setRot(p);
+    return p;
+  }
+  function criarJunta(a,b,kind,pivW,axDir){
+    const r=montarLigacao(a,b,kind,pivW,axDir);
+    world.addConstraint(r.c);
+    unir(a,b);
+    const mk=mkMarcador(kind,false); scene.add(mk);
+    const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
+      new THREE.MeshBasicMaterial({color:0xd9a04a}));
+    scene.add(mkB);
+    const l={c:r.c,kind:kind,a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
+      pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pivW.clone(),curso:cursoDa(a),
+      axAz:angDeDir(axDir).az,axEl:angDeDir(axDir).el,
+      motor:{on:false,vel:0,mag:3,forca:30,ativo:false}};
+    links.push(l);
+    return l;
+  }
+  function ligarMotor(l){ l.motor.on=true; aplicarMotor(l); }
+
+  const Y=0.4;
+  const palma=criarPeca('placa',{larg:0.10,prof:0.14,esp:0.012},
+    {x:0,y:Y,z:0},{x:0,y:0,z:0});
+
+  const EIXO_FLEXAO=new THREE.Vector3(0,0,1);
+  const dedos=[
+    {z:-0.045,comp:[0.045,0.032,0.024]},
+    {z:-0.015,comp:[0.052,0.036,0.026]},
+    {z: 0.015,comp:[0.055,0.038,0.028]},
+    {z: 0.045,comp:[0.050,0.034,0.025]},
+  ];
+  const baseX=0.05;
+  dedos.forEach(function(d){
+    let x=baseX, prev=palma;
+    d.comp.forEach(function(c){
+      const seg=criarPeca('barra',{comp:c,esp:0.012},{x:x+c/2,y:Y,z:d.z},{x:0,y:0,z:0});
+      const j=criarJunta(prev,seg,'hinge',new THREE.Vector3(x,Y,d.z),EIXO_FLEXAO);
+      ligarMotor(j);
+      prev=seg; x+=c;
+    });
+  });
+
+  const EIXO_OPOSICAO=new THREE.Vector3(1,0,0);
+  let tz=-0.07, prevT=palma;
+  [0.04,0.028].forEach(function(c){
+    const cz=tz-c/2;
+    const seg=criarPeca('barra',{comp:c,esp:0.012},{x:0.01,y:Y,z:cz},{x:0,y:90,z:0});
+    const j=criarJunta(prevT,seg,'hinge',new THREE.Vector3(0.01,Y,tz),EIXO_OPOSICAO);
+    ligarMotor(j);
+    prevT=seg; tz-=c;
+  });
+
+  verTudo(); sel=[]; selLink=null; paint(); ui();
+}
+
 window.B={
+  desfazer:desfazer,
+  toggleGravar:function(){
+    const f=document.getElementById('gravarForm');
+    const abrir=f.style.display==='none';
+    f.style.display=abrir?'flex':'none';
+    if(abrir){ const p=sel[0]; const n=document.getElementById('gravarNome');
+      n.value=p?(CAT[p.tipo].nome+' '+p.id):''; n.focus(); }
+  },
+  confirmarGravar:function(){
+    const p=sel[0]; if(!p) return;
+    const nome=(document.getElementById('gravarNome').value||'').trim();
+    if(!nome){ shout('dê um nome à peça antes de salvar'); return; }
+    try{ gravarPeca(p,nome); document.getElementById('gravarForm').style.display='none'; }
+    catch(e){ shout('gravar: '+e.message); }
+  },
+  maoRobotica:function(){ try{ montarMaoRobotica(); }catch(e){ shout('mão robótica: '+e.message); } },
   play:function(){ running=!running; document.getElementById('playBtn').textContent=running?'\u275a\u275a Pausar':'\u25b6 Testar';
     const p2=document.getElementById('playBtn2'); if(p2) p2.textContent=running?'\u275a\u275a':'\u25b6';
-    if(running) parts.forEach(p=>{p.home=p.body.position.clone();p.hq=p.body.quaternion.clone();}); },
+    if(running) parts.forEach(p=>{p.home=p.body.position.clone();p.hq=p.body.quaternion.clone();});
+    paint(); },
   reset:function(){ running=false; document.getElementById('playBtn').textContent='\u25b6 Testar';
     const p2=document.getElementById('playBtn2'); if(p2) p2.textContent='\u25b6';
     parts.forEach(p=>{p.body.position.copy(p.home);p.body.quaternion.copy(p.hq);
-      p.body.velocity.set(0,0,0);p.body.angularVelocity.set(0,0,0);}); sync(); },
-  clear:function(){ running=false; document.getElementById('playBtn').textContent='\u25b6 Testar';
+      p.body.velocity.set(0,0,0);p.body.angularVelocity.set(0,0,0);}); sync(); paint(); },
+  clear:function(){ if(parts.length) snapshot();
+    running=false; document.getElementById('playBtn').textContent='\u25b6 Testar';
     const p2=document.getElementById('playBtn2'); if(p2) p2.textContent='\u25b6';
-    links.forEach(function(l){ world.removeConstraint(l.c); if(l.mk) scene.remove(l.mk); if(l.mkB) scene.remove(l.mkB); }); links=[];
-    parts.forEach(p=>{world.removeBody(p.body);scene.remove(p.mesh);});
-    parts=[];sel=[];selLink=null;seguindo=null;pivotUser=null;pivotLivre=null;ui(); },
+    limparTudo(); ui(); },
   del:function(){ const p=sel[0]; if(!p) return;
+    snapshot();
     links=links.filter(function(l){ if(l.a===p.id||l.b===p.id){world.removeConstraint(l.c); if(l.mk)scene.remove(l.mk); if(l.mkB)scene.remove(l.mkB); if(selLink===l) selLink=null; return false;} return true;});
     if(seguindo===p) seguindo=null;
     world.removeBody(p.body); scene.remove(p.mesh); parts=parts.filter(x=>x!==p); sel=[]; paint(); ui(); },
   dup:function(){ const p=sel[0]; if(!p) return;
-    if(grupoDe(p).length>1){ duplicarBloco(p); return; }   // ligada -> clona o bloco
+    if(grupoDe(p).length>1){ duplicarBloco(p); return; }   // ligada -> clona o bloco (snapshot lá dentro)
+    snapshot();
     const q=addPart(p.tipo,new CANNON.Vec3(p.body.position.x+0.16,p.body.position.y,p.body.position.z));
     Object.keys(p.par).forEach(k=>q.par[k]=p.par[k]);
     q.rot.x=p.rot.x; q.rot.y=p.rot.y; q.rot.z=p.rot.z;
@@ -1160,7 +1406,7 @@ window.B={
   if(seguindo){ orb.t.lerp(new THREE.Vector3(seguindo.body.position.x,
       seguindo.body.position.y, seguindo.body.position.z), 0.18); placeCam(); }
   rend.render(scene,cam); })();
-resize(); ui();
+resize(); ui(); renderModelos(); atualizarBtDesfazer();
 }catch(err){ shout('FALHA NA CARGA: '+err.message); }
 </script>
 
