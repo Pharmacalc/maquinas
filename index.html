@@ -1,7 +1,20 @@
-<div id="app" style="font-family:system-ui,-apple-system,sans-serif;max-width:100%;color:#e8e8ea;background:#16171b;border-radius:12px;overflow:hidden">
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#16171b">
+<title>Bancada de Mecânica</title>
+<style>
+  html,body{margin:0;padding:0;background:#101114;height:100%;overflow:hidden;}
+  body{-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%;overscroll-behavior:none;}
+</style>
+</head>
+<body>
+<div id="app" style="font-family:system-ui,-apple-system,sans-serif;max-width:100%;color:#e8e8ea;background:#16171b;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;height:100vh;height:100dvh">
   <div id="err" style="display:none;padding:10px 12px;background:#3a1f22;color:#ffb4b4;font-size:12px;font-family:monospace;white-space:pre-wrap"></div>
 
-  <div id="stage" style="position:relative;width:100%;height:44vh;min-height:250px;background:#1b1c21;touch-action:none">
+  <div id="stage" style="position:relative;width:100%;height:44vh;min-height:250px;flex-shrink:0;background:#1b1c21;touch-action:none">
     <div style="position:absolute;right:8px;bottom:8px;display:flex;flex-direction:column;gap:6px;z-index:5">
       <button class="zb" onclick="B.zoom(0.8)">+</button>
       <button class="zb" onclick="B.zoom(1.25)">−</button>
@@ -10,6 +23,7 @@
     </div>
   </div>
 
+  <div id="painel" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain">
   <div id="painelMotores" style="padding:8px 12px;display:none;background:#1a2318;border-bottom:1px solid #2c2d34">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
       <span style="font-size:11px;letter-spacing:.08em;color:#8ba888">MOTORES</span>
@@ -61,6 +75,7 @@
     toque no ponto exato onde a dobra deve ficar. <b>Toque numa junta já criada</b> para reposicioná-la,
     trocar o eixo, o tipo, ou removê-la. Toque em <b>duas</b> peças e os botões de ligação aparecem na barra logo abaixo da cena.
   </div>
+  </div>
 </div>
 
 <style>
@@ -81,7 +96,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
 <script>
-function shout(m){ var e=document.getElementById('err'); e.style.display='block'; e.textContent+=m+'\n'; }
+function shout(m){ var e=document.getElementById('err'); e.style.display='block'; e.textContent+=m+'\n';
+  e.onclick=function(){ e.style.display='none'; e.textContent=''; }; }
 window.addEventListener('error',function(ev){ shout('ERRO: '+ev.message+' @'+ev.lineno); });
 try{
 if(typeof THREE==='undefined'){ shout('THREE nao carregou'); throw new Error('sem THREE'); }
@@ -359,7 +375,7 @@ function refazer(l){
   l.mk=mkMarcador(l.kind,false); scene.add(l.mk);
   l.mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
     new THREE.MeshBasicMaterial({color:0xd9a04a}));
-  scene.add(l.mkB); sync(); ui();
+  scene.add(l.mkB); sync(); paint();   // NUNCA ui() aqui: destruiria o slider sendo arrastado
 }
 // ── ESPELHO: 1ª peça = âncora (define o plano), 2ª = o que espelhar ──
 function matEspelho(n){
@@ -616,7 +632,9 @@ function noContato(){
   if(p){ pivotUser=p; verPrevia(); }
 }
 function verPrevia(){
-  if(prev){ scene.remove(prev); prev=null; }
+  if(prev){ prev.traverse(function(o){ if(o.geometry)o.geometry.dispose();
+      if(o.material)o.material.dispose(); });
+    scene.remove(prev); prev=null; }
   if(sel.length!==2) return;
   const a=sel[0].body.position, b=sel[1].body.position;
   const mid=pivotAtual();
@@ -880,7 +898,7 @@ function ui(){
      ['trilho','Trilho']].forEach(function(x){
       const b=document.createElement('button');
       b.className=selLink.kind===x[0]?'acc':''; b.textContent=x[1];
-      b.onclick=function(){ selLink.kind=x[0]; refazer(selLink); }; bar.appendChild(b);
+      b.onclick=function(){ selLink.kind=x[0]; refazer(selLink); ui(); }; bar.appendChild(b);
     });
     if(selLink.kind!=='weld'&&selLink.kind!=='ball'){
       const lab=document.createElement('span'); lab.style.cssText='font-size:12px;color:#8b8d98';
@@ -888,12 +906,12 @@ function ui(){
       [['X',0,0],['Y',0,90],['Z',90,0]].forEach(function(p){ const b=document.createElement('button');
         const on=Math.abs(selLink.axAz-p[1])<1&&Math.abs(selLink.axEl-p[2])<1;
         b.className='ax'+(on?' on':''); b.textContent=p[0];
-        b.onclick=function(){ selLink.axAz=p[1]; selLink.axEl=p[2]; refazer(selLink); };
+        b.onclick=function(){ selLink.axAz=p[1]; selLink.axEl=p[2]; refazer(selLink); ui(); };
         bar.appendChild(b); });
       [['peça 1','pa'],['peça 2','pb']].forEach(function(p){ const b=document.createElement('button');
         b.className='ax'; b.textContent='↗ '+p[0];
         b.onclick=function(){ const a=angDeDir(eixoDaPeca(selLink[p[1]]));
-          selLink.axAz=a.az; selLink.axEl=a.el; refazer(selLink); };
+          selLink.axAz=a.az; selLink.axEl=a.el; refazer(selLink); ui(); };
         bar.appendChild(b); });
     }
     if(selLink.kind==='hinge'||selLink.kind==='pino'){
@@ -1065,8 +1083,16 @@ function montarNudge(){
   grid.style.cssText='display:grid;grid-template-columns:repeat(3,40px);gap:4px';
   function bt(txt,dx,dy,dz,col){
     const b=document.createElement('button'); b.textContent=txt;
-    b.style.cssText='padding:8px 0;font-size:15px;grid-column:'+col;
-    b.onclick=function(){ nudge(dx,dy,dz); }; return b;
+    b.style.cssText='padding:10px 0;font-size:16px;grid-column:'+col+';touch-action:none;user-select:none';
+    let timer=null;
+    function inicia(e){ if(e.cancelable)e.preventDefault(); nudge(dx,dy,dz);
+      timer=setInterval(function(){ nudge(dx,dy,dz); },120); }   // segure p/ repetir
+    function para(){ if(timer){ clearInterval(timer); timer=null; } }
+    b.addEventListener('touchstart',inicia,{passive:false});
+    b.addEventListener('touchend',para); b.addEventListener('touchcancel',para);
+    b.addEventListener('mousedown',inicia); b.addEventListener('mouseup',para);
+    b.addEventListener('mouseleave',para);
+    return b;
   }
   grid.appendChild(bt('\u25b2',0,0,-passo,'2'));        // frente (−z)
   grid.appendChild(bt('\u25c0',-passo,0,0,'1'));
@@ -1075,10 +1101,20 @@ function montarNudge(){
   box.appendChild(grid);
   const vg=document.createElement('div');
   vg.style.cssText='display:flex;gap:4px;margin-top:4px';
-  const up=document.createElement('button'); up.textContent='\u2b06 sobe'; up.style.cssText='flex:1;padding:7px 0;font-size:13px';
-  up.onclick=function(){ nudge(0,passo,0); };
-  const dn=document.createElement('button'); dn.textContent='\u2b07 desce'; dn.style.cssText='flex:1;padding:7px 0;font-size:13px';
-  dn.onclick=function(){ nudge(0,-passo,0); };
+  function btV(txt,dy){
+    const b=document.createElement('button'); b.textContent=txt;
+    b.style.cssText='flex:1;padding:10px 0;font-size:14px;touch-action:none;user-select:none';
+    let timer=null;
+    function inicia(e){ if(e.cancelable)e.preventDefault(); nudge(0,dy,0);
+      timer=setInterval(function(){ nudge(0,dy,0); },120); }
+    function para(){ if(timer){ clearInterval(timer); timer=null; } }
+    b.addEventListener('touchstart',inicia,{passive:false});
+    b.addEventListener('touchend',para); b.addEventListener('touchcancel',para);
+    b.addEventListener('mousedown',inicia); b.addEventListener('mouseup',para);
+    b.addEventListener('mouseleave',para);
+    return b;
+  }
+  const up=btV('\u2b06 sobe',passo), dn=btV('\u2b07 desce',-passo);
   vg.appendChild(up); vg.appendChild(dn); box.appendChild(vg);
 }
 function area(p){ const t=document.getElementById('areaTxt');
@@ -1096,9 +1132,10 @@ window.B={
     const p2=document.getElementById('playBtn2'); if(p2) p2.textContent='\u25b6';
     links.forEach(function(l){ world.removeConstraint(l.c); if(l.mk) scene.remove(l.mk); if(l.mkB) scene.remove(l.mkB); }); links=[];
     parts.forEach(p=>{world.removeBody(p.body);scene.remove(p.mesh);});
-    parts=[];sel=[];ui(); },
+    parts=[];sel=[];selLink=null;seguindo=null;pivotUser=null;pivotLivre=null;ui(); },
   del:function(){ const p=sel[0]; if(!p) return;
-    links=links.filter(function(l){ if(l.a===p.id||l.b===p.id){world.removeConstraint(l.c); if(l.mk)scene.remove(l.mk); if(l.mkB)scene.remove(l.mkB); return false;} return true;});
+    links=links.filter(function(l){ if(l.a===p.id||l.b===p.id){world.removeConstraint(l.c); if(l.mk)scene.remove(l.mk); if(l.mkB)scene.remove(l.mkB); if(selLink===l) selLink=null; return false;} return true;});
+    if(seguindo===p) seguindo=null;
     world.removeBody(p.body); scene.remove(p.mesh); parts=parts.filter(x=>x!==p); sel=[]; paint(); ui(); },
   dup:function(){ const p=sel[0]; if(!p) return;
     if(grupoDe(p).length>1){ duplicarBloco(p); return; }   // ligada -> clona o bloco
@@ -1126,3 +1163,6 @@ window.B={
 resize(); ui();
 }catch(err){ shout('FALHA NA CARGA: '+err.message); }
 </script>
+
+</body>
+</html>
