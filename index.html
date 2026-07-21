@@ -20,6 +20,10 @@
       <button class="zb" onclick="B.zoom(1.25)">−</button>
       <button class="zb" onclick="B.verTudo()" title="ver tudo">⤢</button>
       <button class="zb" id="btSeguir" onclick="B.seguir()" title="centrar / seguir">⊙</button>
+      <button class="zb" onclick="B.vista('t')" title="vista de topo" style="font-size:12px">TOPO</button>
+      <button class="zb" onclick="B.vista('f')" title="vista frontal" style="font-size:12px">FREN</button>
+      <button class="zb" onclick="B.vista('l')" title="vista lateral" style="font-size:12px">LADO</button>
+      <button class="zb" id="btGrav" onclick="B.gravidade()" title="gravidade liga/desliga" style="font-size:14px">🌍</button>
     </div>
   </div>
 
@@ -58,6 +62,7 @@
       <button onclick="B.del()">Remover</button>
       <button onclick="B.desel()">Soltar</button>
       <button id="btGravar" onclick="B.toggleGravar()">💾 Gravar</button>
+      <button id="btFixar" onclick="B.fixar()">📌 Fixar</button>
     </div>
     <div id="gravarForm" style="display:none;margin-top:8px;gap:6px">
       <input id="gravarNome" type="text" placeholder="nome da peça" style="flex:1;min-width:0;background:#1e1f26;color:#e8e8ea;border:1px solid #383941;border-radius:7px;padding:7px 9px;font-size:13px">
@@ -240,6 +245,12 @@ function aplicar(p,shapes){
   if(p.body.updateBoundingRadius) p.body.updateBoundingRadius();
   p.body.aabbNeedsUpdate=true;
 }
+function fixarPeca(p,fixa){
+  p.fixa=fixa;
+  if(fixa){ p.body.mass=0; p.body.updateMassProperties(); p.body.type=CANNON.Body.STATIC;
+    p.body.velocity.set(0,0,0); p.body.angularVelocity.set(0,0,0); }
+  else { p.body.type=CANNON.Body.DYNAMIC; p.body.mass=p.massa||1; p.body.updateMassProperties(); }
+}
 function setRot(p){
   const q=new CANNON.Quaternion();
   q.setFromEuler(p.rot.x*Math.PI/180,p.rot.y*Math.PI/180,p.rot.z*Math.PI/180,'XYZ');
@@ -341,6 +352,7 @@ function serializar(pecas,referencia){
   return {
     partes:pecas.map(function(o){ return {
       id:o.id, tipo:o.tipo, par:JSON.parse(JSON.stringify(o.par)), rot:Object.assign({},o.rot),
+      massa:o.massa||1, fixa:!!o.fixa,
       pos:{x:o.body.position.x-referencia.x,y:o.body.position.y-referencia.y,z:o.body.position.z-referencia.z},
       quat:{x:o.body.quaternion.x,y:o.body.quaternion.y,z:o.body.quaternion.z,w:o.body.quaternion.w}
     };}),
@@ -348,7 +360,10 @@ function serializar(pecas,referencia){
       .map(function(l){ return {
         kind:l.kind, a:l.a, b:l.b,
         pivW:{x:l.pivW.x-referencia.x,y:l.pivW.y-referencia.y,z:l.pivW.z-referencia.z},
-        axAz:l.axAz, axEl:l.axEl, curso:l.curso, motor:Object.assign({},l.motor,{ativo:false,vel:0})
+        axAz:l.axAz, axEl:l.axEl, curso:l.curso,
+        mola:l.mola?Object.assign({},l.mola):undefined,
+        eng:l.eng?Object.assign({},l.eng):undefined,
+        motor:Object.assign({},l.motor,{ativo:false,vel:0})
       };})
   };
 }
@@ -359,6 +374,8 @@ function instanciarModelo(dados,origem){
   dados.partes.forEach(function(dp){
     const p=addPart(dp.tipo,new CANNON.Vec3(origem.x+dp.pos.x,origem.y+dp.pos.y,origem.z+dp.pos.z));
     Object.assign(p.par,dp.par); rebuild(p);
+    p.massa=dp.massa||1; p.body.mass=p.massa; p.body.updateMassProperties();
+    if(dp.fixa) fixarPeca(p,true);
     p.body.quaternion.set(dp.quat.x,dp.quat.y,dp.quat.z,dp.quat.w);
     p.rot=Object.assign({},dp.rot);
     p.home=p.body.position.clone(); p.hq=p.body.quaternion.clone();
@@ -368,20 +385,22 @@ function instanciarModelo(dados,origem){
     const a=mapa[dl.a], b=mapa[dl.b]; if(!a||!b) return;
     const dir=dirDeAng(dl.axAz,dl.axEl);
     const pv=new THREE.Vector3(origem.x+dl.pivW.x,origem.y+dl.pivW.y,origem.z+dl.pivW.z);
-    const r=montarLigacao(a,b,dl.kind,pv,dir);
-    world.addConstraint(r.c); unir(a,b);
+    const r=montarLigacao(a,b,dl.kind,pv,dir,dl.mola||dl.eng);
+    ligAdd(r.c,dl.kind); unir(a,b);
     const mk=mkMarcador(dl.kind,false); scene.add(mk);
     const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),new THREE.MeshBasicMaterial({color:0xd9a04a}));
     scene.add(mkB);
     const novo={c:r.c,kind:dl.kind,a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
       pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv.clone(),curso:dl.curso,axAz:dl.axAz,axEl:dl.axEl,
+      mola:dl.mola?Object.assign({},dl.mola):undefined,
+      eng:dl.eng?Object.assign({},dl.eng):undefined,
       motor:Object.assign({on:false,vel:0,mag:3,forca:30,ativo:false},dl.motor,{ativo:false,vel:0})};
     links.push(novo); aplicarMotor(novo);
   });
   return dados.partes.length?mapa[dados.partes[0].id]:null;
 }
 function limparTudo(){
-  links.forEach(function(l){ world.removeConstraint(l.c); if(l.mk)scene.remove(l.mk); if(l.mkB)scene.remove(l.mkB); });
+  links.forEach(function(l){ ligRemove(l.c,l.kind); if(l.mk)scene.remove(l.mk); if(l.mkB)scene.remove(l.mkB); });
   links=[];
   parts.forEach(function(p){ world.removeBody(p.body); scene.remove(p.mesh); });
   parts=[]; sel=[]; selLink=null; seguindo=null; pivotUser=null; pivotLivre=null;
@@ -466,10 +485,40 @@ function renderModelos(){
     row.appendChild(b); row.appendChild(x); lista.appendChild(row);
   });
 }
-function montarLigacao(a,b,kind,pivW,axDir){
+let molas=[];
+function ligAdd(c,kind){ if(kind==='mola') molas.push(c); else world.addConstraint(c); }
+function ligRemove(c,kind){ if(kind==='mola') molas=molas.filter(m=>m!==c); else world.removeConstraint(c); }
+function montarLigacao(a,b,kind,pivW,axDir,opts){
   const mid=new CANNON.Vec3(pivW.x,pivW.y,pivW.z);
   const pa=a.body.pointToLocalFrame(mid), pb=b.body.pointToLocalFrame(mid);
   let c, axL=null;
+  if(kind==='engrenagem'||kind==='polia'){
+    // acoplamento de razão angular pelo eixo próprio (X local) de cada peça:
+    // engrenagem: wB = -razão·wA (contra-rotação) | polia: wB = +razão·wA (mesmo sentido)
+    const razao=(opts&&opts.razao!==undefined)?opts.razao:1;
+    const sinal=(kind==='polia')?1:-1;
+    c=new CANNON.Constraint(a.body,b.body);
+    const eq=new CANNON.RotationalMotorEquation(a.body,b.body);
+    eq.targetVelocity=0; eq.maxForce=1e6; eq.minForce=-1e6;
+    c.equations.push(eq);
+    const axA=new CANNON.Vec3(1,0,0), axB=new CANNON.Vec3(1,0,0);
+    c.update=function(){
+      a.body.vectorToWorldFrame(axA,eq.axisA);
+      b.body.vectorToWorldFrame(axB,eq.axisB);
+      eq.axisB.scale(sinal/c.razaoAtual, eq.axisB);
+    };
+    c.razaoAtual=razao;
+    return {c:c,pa:new CANNON.Vec3(0,0,0),pb:new CANNON.Vec3(0,0,0),axL:null};
+  }
+  if(kind==='mola'){
+    const o=opts||{};
+    const rest=(o.rest!==undefined)?o.rest:a.body.position.distanceTo(b.body.position);
+    c=new CANNON.Spring(a.body,b.body,{restLength:rest,
+      stiffness:(o.stiff!==undefined)?o.stiff:60,
+      damping:(o.damp!==undefined)?o.damp:2,
+      localAnchorA:new CANNON.Vec3(0,0,0), localAnchorB:new CANNON.Vec3(0,0,0)});
+    return {c:c,pa:new CANNON.Vec3(0,0,0),pb:new CANNON.Vec3(0,0,0),axL:null};
+  }
   if(kind==='weld') c=soldar(a.body,b.body);
   else if(kind==='ball') c=new CANNON.PointToPointConstraint(a.body,pa,b.body,pb,1e6);
   else if(kind==='trilho'){
@@ -508,11 +557,11 @@ function comandar(l,dir){   // dir: -1, 0, +1
   aplicarMotor(l);
 }
 function refazer(l){
-  world.removeConstraint(l.c);
+  ligRemove(l.c,l.kind);
   if(l.mk) scene.remove(l.mk);
   if(l.mkB) scene.remove(l.mkB);
-  const r=montarLigacao(l.pa,l.pb,l.kind,l.pivW,dirDeAng(l.axAz,l.axEl));
-  world.addConstraint(r.c);
+  const r=montarLigacao(l.pa,l.pb,l.kind,l.pivW,dirDeAng(l.axAz,l.axEl),l.mola||l.eng);
+  ligAdd(r.c,l.kind);
   l.c=r.c; l.pivA=r.pa; l.pivB=r.pb; l.axL=r.axL;
   aplicarMotor(l);
   l.mk=mkMarcador(l.kind,false); scene.add(l.mk);
@@ -570,8 +619,8 @@ function duplicarBloco(p){
     if(!A||!B) return;                     // só ligações internas ao bloco
     const pv=l.pivW.clone().add(off);
     const dir=dirDeAng(l.axAz,l.axEl);
-    const r=montarLigacao(A,B,l.kind,pv,dir);
-    world.addConstraint(r.c);
+    const r=montarLigacao(A,B,l.kind,pv,dir,l.mola||l.eng);
+    ligAdd(r.c,l.kind);
     unir(A,B);
     const mk=mkMarcador(l.kind,false); scene.add(mk);
     const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
@@ -579,7 +628,8 @@ function duplicarBloco(p){
     scene.add(mkB);
     const nl={c:r.c,kind:l.kind,a:A.id,b:B.id,pa:A,pb:B,mk:mk,mkB:mkB,
       pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv.clone(),curso:l.curso,
-      axAz:l.axAz,axEl:l.axEl,
+      axAz:l.axAz,axEl:l.axEl,mola:l.mola?Object.assign({},l.mola):undefined,
+      eng:l.eng?Object.assign({},l.eng):undefined,
       motor:{on:l.motor.on,vel:0,mag:l.motor.mag,forca:l.motor.forca,ativo:false,inv:l.motor.inv}};
     links.push(nl); aplicarMotor(nl);
   });
@@ -618,8 +668,8 @@ function espelhar(eixo){
     const pv=refletePonto(l.pivW,pl,n);
     const dirO=dirDeAng(l.axAz,l.axEl);
     const dirE=dirO.clone().sub(n.clone().multiplyScalar(2*dirO.dot(n)));
-    const r=montarLigacao(A,B,l.kind,pv,dirE);
-    world.addConstraint(r.c);
+    const r=montarLigacao(A,B,l.kind,pv,dirE,l.mola||l.eng);
+    ligAdd(r.c,l.kind);
     unir(A,B);
     const mk=mkMarcador(l.kind,false); scene.add(mk);
     const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
@@ -627,6 +677,8 @@ function espelhar(eixo){
     scene.add(mkB);
     feitas.push({c:r.c,kind:l.kind,a:A.id,b:B.id,pa:A,pb:B,mk:mk,mkB:mkB,
       pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv.clone(),curso:l.curso,
+      mola:l.mola?Object.assign({},l.mola):undefined,
+      eng:l.eng?Object.assign({},l.eng):undefined,
       axAz:angDeDir(dirE).az, axEl:angDeDir(dirE).el,
       motor:{on:l.motor.on, vel:0, mag:l.motor.mag, forca:l.motor.forca, ativo:false, inv:!l.motor.inv}});
   });
@@ -647,7 +699,7 @@ function join(kind){
             : dirDeAng(novoAz,novoEl);
   const r=montarLigacao(a,b,kind,P,dir);
   const c=r.c, pa=r.pa, pb=r.pb;
-  world.addConstraint(c);
+  ligAdd(c,kind);
   unir(a,b);
   const mk=mkMarcador(kind,false); scene.add(mk);
   // âncora do lado B: se as duas se separarem, você VÊ a junta abrindo
@@ -657,11 +709,13 @@ function join(kind){
   links.push({c:c,kind:kind,a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
               pivA:pa,pivB:pb,axL:r.axL,pivW:P.clone(),curso:cursoDa(a),
               axAz:angDeDir(dir).az, axEl:angDeDir(dir).el,
+              mola:(kind==='mola')?{stiff:c.stiffness,damp:c.damping,rest:c.restLength}:undefined,
+              eng:(kind==='engrenagem'||kind==='polia')?{razao:c.razaoAtual}:undefined,
               motor:{on:false,vel:0,mag:3,forca:30,ativo:false}});
   sel=[]; pivotUser=null; pivotLivre=null; paint(); ui(); sync();
 }
 const COR={weld:0xffffff, ball:0xb49cff, hinge:0x6fd6c8, pino:0xf0a860,
-           trilho:0x62b0f0, motor:0x7ee06a};
+           trilho:0x62b0f0, mola:0xf0e060, engrenagem:0xe060c0, polia:0xc09060, motor:0x7ee06a};
 function eixoMundo(i){ return new THREE.Vector3(i===0?1:0,i===1?1:0,i===2?1:0); }
 function dirDeAng(az,el){
   const a=az*Math.PI/180, e=el*Math.PI/180;
@@ -680,7 +734,7 @@ let novoAz=90, novoEl=0;   // padrão = eixo Z
 function mkMarcador(kind, transp){
   const g=new THREE.Group();
   const op = transp?{transparent:true,opacity:0.55}:{};
-  if(kind==='ball'||kind==='weld'){
+  if(kind==='ball'||kind==='weld'||kind==='mola'||kind==='engrenagem'||kind==='polia'){
     const m=new THREE.Mesh(new THREE.SphereGeometry(kind==='ball'?0.022:0.014,16,12),
       new THREE.MeshBasicMaterial(Object.assign({color:COR[kind]},op)));
     g.add(m); g.userData.bola=m;
@@ -1047,7 +1101,7 @@ function ui(){
   document.getElementById('editor').style.display=one?'block':'none';
 
   if(selLink){
-    const NOME={weld:'SOLDA',ball:'ESFÉRICA',hinge:'DOBRADIÇA',pino:'PINO',trilho:'TRILHO'};
+    const NOME={weld:'SOLDA',ball:'ESFÉRICA',hinge:'DOBRADIÇA',pino:'PINO',trilho:'TRILHO',mola:'MOLA',engrenagem:'ENGRENAGEM',polia:'POLIA'};
     const c=document.createElement('span'); c.className='chip';
     c.textContent=NOME[selLink.kind]+' · '+CAT[selLink.pa.tipo].nome+' ↔ '+CAT[selLink.pb.tipo].nome;
     bar.appendChild(c);
@@ -1056,12 +1110,12 @@ function ui(){
     bp.className=modoPivo?'acc':'';
     bp.onclick=function(){ modoPivo=!modoPivo; ui(); }; bar.appendChild(bp);
     [['weld','Solda'],['ball','Esférica'],['hinge','Dobradiça'],['pino','Pino'],
-     ['trilho','Trilho']].forEach(function(x){
+     ['trilho','Trilho'],['mola','Mola'],['engrenagem','Engren.'],['polia','Polia']].forEach(function(x){
       const b=document.createElement('button');
       b.className=selLink.kind===x[0]?'acc':''; b.textContent=x[1];
       b.onclick=function(){ snapshot(); selLink.kind=x[0]; refazer(selLink); ui(); }; bar.appendChild(b);
     });
-    if(selLink.kind!=='weld'&&selLink.kind!=='ball'){
+    if(selLink.kind!=='weld'&&selLink.kind!=='ball'&&selLink.kind!=='mola'&&selLink.kind!=='engrenagem'&&selLink.kind!=='polia'){
       const lab=document.createElement('span'); lab.style.cssText='font-size:12px;color:#8b8d98';
       lab.textContent='eixo'; bar.appendChild(lab);
       [['X',0,0],['Y',0,90],['Z',90,0]].forEach(function(p){ const b=document.createElement('button');
@@ -1082,12 +1136,38 @@ function ui(){
       bar.appendChild(bm);
     }
     const br=document.createElement('button'); br.textContent='Remover';
-    br.onclick=function(){ snapshot(); world.removeConstraint(selLink.c);
+    br.onclick=function(){ snapshot(); ligRemove(selLink.c,selLink.kind);
       if(selLink.mk) scene.remove(selLink.mk); if(selLink.mkB) scene.remove(selLink.mkB);
       links=links.filter(x=>x!==selLink); selLink=null; modoPivo=false; ui(); };
     bar.appendChild(br);
     document.getElementById('stat').textContent=parts.length+' pe\u00e7as \u00b7 '+links.length+' liga\u00e7\u00f5es';
-    if(selLink.kind!=='weld'&&selLink.kind!=='ball'){
+    if(selLink.kind==='mola'){
+      const ed=document.getElementById('editor'); ed.style.display='block';
+      document.getElementById('selName').textContent='MOLA';
+      const box=document.getElementById('params'); box.innerHTML='';
+      slider(box,'rigidez',5,400,5,selLink.mola.stiff,v=>v.toFixed(0),
+        function(v){ selLink.mola.stiff=v; selLink.c.stiffness=v; });
+      slider(box,'amortec.',0,15,0.5,selLink.mola.damp,v=>v.toFixed(1),
+        function(v){ selLink.mola.damp=v; selLink.c.damping=v; });
+      slider(box,'comprim.',0.02,1.2,0.01,selLink.mola.rest,v=>v.toFixed(2)+' m',
+        function(v){ selLink.mola.rest=v; selLink.c.restLength=v; });
+      document.getElementById('rots').innerHTML='';
+    }
+    else if(selLink.kind==='engrenagem'||selLink.kind==='polia'){
+      const ed=document.getElementById('editor'); ed.style.display='block';
+      document.getElementById('selName').textContent=NOME[selLink.kind];
+      const box=document.getElementById('params'); box.innerHTML='';
+      slider(box,'razão',0.25,4,0.25,selLink.eng.razao,v=>'1 : '+v.toFixed(2),
+        function(v){ selLink.eng.razao=v; selLink.c.razaoAtual=v; });
+      const nota=document.createElement('div');
+      nota.style.cssText='font-size:11px;color:#8b8d98;margin-top:2px';
+      nota.textContent=(selLink.kind==='polia')
+        ?'a 2ª peça gira (razão)× a 1ª, no MESMO sentido (correia)'
+        :'a 2ª peça gira (razão)× a 1ª, em sentido contrário';
+      box.appendChild(nota);
+      document.getElementById('rots').innerHTML='';
+    }
+    else if(selLink.kind!=='weld'&&selLink.kind!=='ball'){
       const ed=document.getElementById('editor'); ed.style.display='block';
       document.getElementById('selName').textContent=NOME[selLink.kind];
       const box=document.getElementById('params'); box.innerHTML='';
@@ -1126,7 +1206,7 @@ function ui(){
     c.textContent=CAT[sel[0].tipo].nome+' #'+sel[0].id+' + '+CAT[sel[1].tipo].nome+' #'+sel[1].id;
     bar.appendChild(c);
     [['weld','Soldar'],['ball','Esférica'],['hinge','Dobradiça'],['pino','Pino'],
-     ['trilho','Trilho']].forEach(function(x){
+     ['trilho','Trilho'],['mola','Mola'],['engrenagem','Engrenagem'],['polia','Polia']].forEach(function(x){
       const b=document.createElement('button'); b.className='acc'; b.textContent=x[1];
       b.onclick=function(){ try{ join(x[0]); }catch(e){ shout('ligar: '+e.message); } };
       bar.appendChild(b);
@@ -1179,6 +1259,8 @@ function ui(){
         v=>v.toFixed(d.u==='m'?3:0)+' '+d.u,
         function(v){ one.par[k]=v; rebuild(one); if(one.tipo==='placa') area(one); });
     });
+    slider(box,'massa',0.1,20,0.1,one.massa||1,v=>v.toFixed(1)+' kg',
+      function(v){ one.massa=v; if(!one.fixa){ one.body.mass=v; one.body.updateMassProperties(); } });
     const a=document.createElement('div'); a.id='areaTxt';
     a.style.cssText='font-size:12px;color:#8b8d98;margin-top:2px'; box.appendChild(a);
     if(one.tipo==='placa') area(one);
@@ -1187,6 +1269,8 @@ function ui(){
     const bg=document.getElementById('btGravar');
     if(bg) bg.textContent = (grupoDe(one).length>1) ? '💾 Gravar montagem' : '💾 Gravar';
     const gf=document.getElementById('gravarForm'); if(gf) gf.style.display='none';
+    const bf=document.getElementById('btFixar');
+    if(bf){ bf.textContent=one.fixa?'📌 Fixada':'📌 Fixar'; bf.className=one.fixa?'go':''; }
     const rb=document.getElementById('rots'); rb.innerHTML='';
     ['x','y','z'].forEach(function(ax){
       slider(rb,'giro '+ax.toUpperCase(),-180,180,5,one.rot[ax],v=>v.toFixed(0)+' \u00b0',
@@ -1298,7 +1382,7 @@ function montarMaoRobotica(){
   }
   function criarJunta(a,b,kind,pivW,axDir){
     const r=montarLigacao(a,b,kind,pivW,axDir);
-    world.addConstraint(r.c);
+    ligAdd(r.c,kind);
     unir(a,b);
     const mk=mkMarcador(kind,false); scene.add(mk);
     const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
@@ -1350,6 +1434,18 @@ function montarMaoRobotica(){
 
 window.B={
   desfazer:desfazer,
+  fixar:function(){ const p=sel[0]; if(!p) return; snapshot(); fixarPeca(p,!p.fixa); ui(); },
+  vista:function(v){
+    if(v==='t'){ orb.az=0.001; orb.el=1.35; }
+    else if(v==='f'){ orb.az=0.001; orb.el=0.08; }
+    else { orb.az=Math.PI/2; orb.el=0.08; }
+    placeCam(); },
+  gravidade:function(){
+    const on=Math.abs(world.gravity.y)>0.01;
+    world.gravity.set(0,on?0:-9.82,0);
+    const b=document.getElementById('btGrav');
+    if(b) b.style.opacity=on?'0.35':'1';
+    if(on) parts.forEach(function(p){ p.body.velocity.set(0,0,0); p.body.angularVelocity.set(0,0,0); }); },
   toggleGravar:function(){
     const f=document.getElementById('gravarForm');
     const abrir=f.style.display==='none';
@@ -1379,7 +1475,7 @@ window.B={
     limparTudo(); ui(); },
   del:function(){ const p=sel[0]; if(!p) return;
     snapshot();
-    links=links.filter(function(l){ if(l.a===p.id||l.b===p.id){world.removeConstraint(l.c); if(l.mk)scene.remove(l.mk); if(l.mkB)scene.remove(l.mkB); if(selLink===l) selLink=null; return false;} return true;});
+    links=links.filter(function(l){ if(l.a===p.id||l.b===p.id){ligRemove(l.c,l.kind); if(l.mk)scene.remove(l.mk); if(l.mkB)scene.remove(l.mkB); if(selLink===l) selLink=null; return false;} return true;});
     if(seguindo===p) seguindo=null;
     world.removeBody(p.body); scene.remove(p.mesh); parts=parts.filter(x=>x!==p); sel=[]; paint(); ui(); },
   dup:function(){ const p=sel[0]; if(!p) return;
@@ -1402,7 +1498,7 @@ window.B={
                            setSel:function(a){ sel=a; paint(); ui(); }}; }
 };
 (function loop(){ requestAnimationFrame(loop);
-  if(running){ world.step(1/60); limitarTrilhos(); sync(); }
+  if(running){ molas.forEach(function(m){ m.applyForce(); }); world.step(1/60); limitarTrilhos(); sync(); }
   if(seguindo){ orb.t.lerp(new THREE.Vector3(seguindo.body.position.x,
       seguindo.body.position.y, seguindo.body.position.z), 0.18); placeCam(); }
   rend.render(scene,cam); })();
