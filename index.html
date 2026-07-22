@@ -197,12 +197,13 @@ function resize(){ const w=stage.clientWidth,h=stage.clientHeight; if(!w||!h) re
   cam.aspect=w/h; cam.updateProjectionMatrix(); placeCam(); }
 new ResizeObserver(resize).observe(stage);
 
-const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36};
+const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8};
 const CAT={
   barra:{nome:'Barra reta',p:{comp:{r:[0.1,1.2],v:0.5,u:'m'},esp:{r:[0.01,0.06],v:0.025,u:'m'}}},
   arco:{nome:'Semicirculo',p:{raio:{r:[0.08,0.6],v:0.25,u:'m'},arco:{r:[20,360],v:180,u:'\u00b0'},esp:{r:[0.01,0.05],v:0.02,u:'m'}}},
   placa:{nome:'Placa',p:{larg:{r:[0.05,0.9],v:0.35,u:'m'},prof:{r:[0.05,0.9],v:0.22,u:'m'},esp:{r:[0.004,0.05],v:0.012,u:'m'}}},
-  roda:{nome:'Roda',p:{raio:{r:[0.03,0.25],v:0.09,u:'m'},larg:{r:[0.01,0.1],v:0.035,u:'m'}}}
+  roda:{nome:'Roda',p:{raio:{r:[0.03,0.25],v:0.09,u:'m'},larg:{r:[0.01,0.1],v:0.035,u:'m'}}},
+  dentada:{nome:'Roda dentada',p:{raio:{r:[0.04,0.25],v:0.09,u:'m'},dentes:{r:[6,24],v:12,u:''},esp:{r:[0.01,0.06],v:0.03,u:'m'}}}
 };
 let parts=[],sel=[],running=false,nId=0,hingeAx=0,links=[];
 
@@ -227,6 +228,30 @@ function build(tipo,par){
       const m=new THREE.Mesh(new THREE.BoxGeometry(seg*1.03,e,e),mat);
       m.position.set(px,0,pz); m.rotation.y=a; g.add(m);
     }
+  } else if(tipo==='dentada'){
+    const R=par.raio, N=Math.max(4,Math.round(par.dentes)), e=par.esp;
+    const passo=2*Math.PI*R/N, alt=Math.min(0.35*R,passo*0.55), larg=passo*0.42;
+    const nSeg=Math.max(10,N);
+    for(let i=0;i<nSeg;i++){
+      const a=2*Math.PI*(i+0.5)/nSeg;
+      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,R*0.10,R*Math.sin(Math.PI/nSeg)*1.05)),
+        o:new CANNON.Vec3(0,R*0.93*Math.cos(a),R*0.93*Math.sin(a)),q:q});
+    }
+    for(let i=0;i<N;i++){
+      const a=2*Math.PI*i/N;
+      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,alt/2,larg/2)),
+        o:new CANNON.Vec3(0,(R+alt/2-0.002)*Math.cos(a),(R+alt/2-0.002)*Math.sin(a)),q:q});
+      const dm=new THREE.Mesh(new THREE.BoxGeometry(e,alt,larg),mat);
+      dm.position.set(0,(R+alt/2-0.002)*Math.cos(a),(R+alt/2-0.002)*Math.sin(a));
+      dm.rotation.x=a; g.add(dm);
+    }
+    const disco=new THREE.Mesh(new THREE.CylinderGeometry(R,R,e,28),mat);
+    disco.rotation.z=Math.PI/2; g.add(disco);
+    const cubo=new THREE.Mesh(new THREE.CylinderGeometry(R*0.28,R*0.28,e*1.5,16),
+      new THREE.MeshLambertMaterial({color:0x5a6170}));
+    cubo.rotation.z=Math.PI/2; g.add(cubo);
   } else if(tipo==='roda'){
     // colisão ESFÉRICA (cilindro do cannon afunda 80mm; esfera 0mm — medido)
     shapes.push({s:new CANNON.Sphere(par.raio),o:new CANNON.Vec3()});
@@ -386,7 +411,7 @@ function instanciarModelo(dados,origem){
     const dir=dirDeAng(dl.axAz,dl.axEl);
     const pv=new THREE.Vector3(origem.x+dl.pivW.x,origem.y+dl.pivW.y,origem.z+dl.pivW.z);
     const r=montarLigacao(a,b,dl.kind,pv,dir,dl.mola||dl.eng);
-    ligAdd(r.c,dl.kind); unir(a,b);
+    ligAdd(r.c,dl.kind); politicaColisao(r.c,dl.kind,a,b);
     const mk=mkMarcador(dl.kind,false); scene.add(mk);
     const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),new THREE.MeshBasicMaterial({color:0xd9a04a}));
     scene.add(mkB);
@@ -562,6 +587,7 @@ function refazer(l){
   if(l.mkB) scene.remove(l.mkB);
   const r=montarLigacao(l.pa,l.pb,l.kind,l.pivW,dirDeAng(l.axAz,l.axEl),l.mola||l.eng);
   ligAdd(r.c,l.kind);
+  politicaColisao(r.c,l.kind,l.pa,l.pb);
   l.c=r.c; l.pivA=r.pa; l.pivB=r.pb; l.axL=r.axL;
   aplicarMotor(l);
   l.mk=mkMarcador(l.kind,false); scene.add(l.mk);
@@ -621,7 +647,7 @@ function duplicarBloco(p){
     const dir=dirDeAng(l.axAz,l.axEl);
     const r=montarLigacao(A,B,l.kind,pv,dir,l.mola||l.eng);
     ligAdd(r.c,l.kind);
-    unir(A,B);
+    politicaColisao(r.c,l.kind,A,B);
     const mk=mkMarcador(l.kind,false); scene.add(mk);
     const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
       new THREE.MeshBasicMaterial({color:0xd9a04a}));
@@ -670,7 +696,7 @@ function espelhar(eixo){
     const dirE=dirO.clone().sub(n.clone().multiplyScalar(2*dirO.dot(n)));
     const r=montarLigacao(A,B,l.kind,pv,dirE,l.mola||l.eng);
     ligAdd(r.c,l.kind);
-    unir(A,B);
+    politicaColisao(r.c,l.kind,A,B);
     const mk=mkMarcador(l.kind,false); scene.add(mk);
     const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
       new THREE.MeshBasicMaterial({color:0xd9a04a}));
@@ -700,7 +726,7 @@ function join(kind){
   const r=montarLigacao(a,b,kind,P,dir);
   const c=r.c, pa=r.pa, pb=r.pb;
   ligAdd(c,kind);
-  unir(a,b);
+  politicaColisao(c,kind,a,b);
   const mk=mkMarcador(kind,false); scene.add(mk);
   // âncora do lado B: se as duas se separarem, você VÊ a junta abrindo
   const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
@@ -865,6 +891,11 @@ function aplicarGrupo(p){
   if(p.asm===null){ p.body.collisionFilterGroup=2; p.body.collisionFilterMask=-1; return; }
   const G=1<<((p.asm%28)+2);
   p.body.collisionFilterGroup=G; p.body.collisionFilterMask=-1 & ~G;
+}
+function politicaColisao(c,kind,a,b){
+  if(kind==='weld'){ unir(a,b); return; }
+  if(kind==='mola') return;              // Spring não entra no solver de pares; peças separadas colidem (ok)
+  if(c && 'collideConnected' in c) c.collideConnected=false;   // só o PAR ligado deixa de colidir
 }
 function unir(a,b){
   let k;
@@ -1383,7 +1414,7 @@ function montarMaoRobotica(){
   function criarJunta(a,b,kind,pivW,axDir){
     const r=montarLigacao(a,b,kind,pivW,axDir);
     ligAdd(r.c,kind);
-    unir(a,b);
+    politicaColisao(r.c,kind,a,b);
     const mk=mkMarcador(kind,false); scene.add(mk);
     const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
       new THREE.MeshBasicMaterial({color:0xd9a04a}));
