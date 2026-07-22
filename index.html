@@ -211,7 +211,7 @@ function resize(){ const w=stage.clientWidth,h=stage.clientHeight; if(!w||!h) re
   cam.aspect=w/h; cam.updateProjectionMatrix(); placeCam(); }
 new ResizeObserver(resize).observe(stage);
 
-const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8,coroa:0x9a8a70,eixo:0xb8bcc6,came:0xc06a5a};
+const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8,coroa:0x9a8a70,eixo:0xb8bcc6,came:0xc06a5a,difcoroa:0x7a9a6a};
 const CAT={
   barra:{nome:'Barra reta',p:{comp:{r:[0.02,1.2],v:0.5,u:'m'},esp:{r:[0.005,0.06],v:0.025,u:'m'}}},
   arco:{nome:'Semicirculo',p:{raio:{r:[0.04,0.6],v:0.25,u:'m'},arco:{r:[20,360],v:180,u:'\u00b0'},esp:{r:[0.005,0.05],v:0.02,u:'m'}}},
@@ -220,7 +220,8 @@ const CAT={
   dentada:{nome:'Roda dentada',p:{raio:{r:[0.04,0.25],v:0.09,u:'m'},dentes:{r:[6,24],v:12,u:''},esp:{r:[0.01,0.06],v:0.03,u:'m'},raios:{r:[0,6],v:0,u:''}}},
   coroa:{nome:'Coroa (dentes laterais)',p:{raio:{r:[0.04,0.25],v:0.09,u:'m'},dentes:{r:[6,24],v:12,u:''},esp:{r:[0.008,0.04],v:0.015,u:'m'}}},
   eixo:{nome:'Eixo cilíndrico',p:{comp:{r:[0.04,0.8],v:0.3,u:'m'},raio:{r:[0.008,0.05],v:0.018,u:'m'}}},
-  came:{nome:'Came (excêntrico)',p:{raio:{r:[0.03,0.18],v:0.07,u:'m'},exc:{r:[0,0.08],v:0.03,u:'m'},esp:{r:[0.01,0.05],v:0.025,u:'m'}}}
+  came:{nome:'Came (excêntrico)',p:{raio:{r:[0.03,0.18],v:0.07,u:'m'},exc:{r:[0,0.08],v:0.03,u:'m'},esp:{r:[0.01,0.05],v:0.025,u:'m'}}},
+  difcoroa:{nome:'Coroa de diferencial',p:{raio:{r:[0.06,0.25],v:0.11,u:'m'},dentes:{r:[8,28],v:14,u:''},esp:{r:[0.01,0.04],v:0.015,u:'m'},suporte:{r:[0.03,0.12],v:0.05,u:'m'}}}
 };
 let parts=[],sel=[],running=false,nId=0,hingeAx=0,links=[];
 
@@ -316,6 +317,39 @@ function build(tipo,par){
     const cubo=new THREE.Mesh(new THREE.CylinderGeometry(R*0.28,R*0.28,e*1.8,16),
       new THREE.MeshLambertMaterial({color:0x5a6170}));
     cubo.rotation.z=Math.PI/2; g.add(cubo);
+  } else if(tipo==='difcoroa'){
+    // gaiola de diferencial: anel VAZADO com dentes laterais + travessão diametral
+    // com dois suportes (a ±suporte no Y local) onde os pinhões satélites se pinam
+    const R=par.raio, N=Math.max(6,Math.round(par.dentes)), e=par.esp, sup=par.suporte;
+    const passo=2*Math.PI*R/N, altAx=Math.min(0.30*R,passo*0.5), larg=passo*0.42, prof=R*0.16;
+    const nSeg=Math.max(12,N);
+    for(let i=0;i<nSeg;i++){          // anel (vazado — sem disco)
+      const a=2*Math.PI*(i+0.5)/nSeg;
+      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,R*0.09,R*Math.sin(Math.PI/nSeg)*1.05)),
+        o:new CANNON.Vec3(0,R*0.94*Math.cos(a),R*0.94*Math.sin(a)),q:q});
+    }
+    for(let i=0;i<N;i++){             // dentes laterais (face +X)
+      const a=2*Math.PI*i/N, rD=R-prof/2-0.002;
+      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(altAx/2,prof/2,larg/2)),
+        o:new CANNON.Vec3(e/2+altAx/2-0.002,rD*Math.cos(a),rD*Math.sin(a)),q:q});
+      const dm=new THREE.Mesh(new THREE.BoxGeometry(altAx,prof,larg),mat);
+      dm.position.set(e/2+altAx/2-0.002,rD*Math.cos(a),rD*Math.sin(a));
+      dm.rotation.x=a; g.add(dm);
+    }
+    // travessão diametral (Y local) atravessando o centro vazado
+    shapes.push({s:new CANNON.Box(new CANNON.Vec3(e*0.7,R*0.86,e*0.7)),
+      o:new CANNON.Vec3(0,0,0),q:new CANNON.Quaternion()});
+    const anel=new THREE.Mesh(new THREE.TorusGeometry(R*0.92,e*0.55,10,30),mat);
+    anel.rotation.y=Math.PI/2; g.add(anel);
+    const trav=new THREE.Mesh(new THREE.BoxGeometry(e*1.4,R*1.72,e*1.4),mat);
+    g.add(trav);
+    [1,-1].forEach(function(s){       // suportes visuais dos pinhões
+      const b1=new THREE.Mesh(new THREE.CylinderGeometry(e*1.1,e*1.1,e*2.2,12),
+        new THREE.MeshLambertMaterial({color:0x5a6170}));
+      b1.position.set(0,s*sup,0); g.add(b1);
+    });
   } else if(tipo==='eixo'){
     // prisma octogonal: 4 caixas giradas — evita o afundamento do Cylinder do Cannon
     const L=par.comp, r=par.raio;
@@ -947,6 +981,9 @@ function pontosLocais(p){
   } else if(p.tipo==='roda'){
     add(q.larg/2,0,0,'eixo'); add(-q.larg/2,0,0,'eixo');
     add(0,q.raio,0,'aro'); add(0,-q.raio,0,'aro');
+  } else if(p.tipo==='difcoroa'){
+    add(0,q.suporte,0,'suporte do pinhão'); add(0,-q.suporte,0,'suporte do pinhão');
+    add(0,0,0,'centro');
   } else if(p.tipo==='came'){
     add(0,0,0,'eixo de giro'); add(0,0,q.exc,'centro do disco'); add(0,0,q.exc+q.raio,'borda');
   } else if(p.tipo==='eixo'){
@@ -1265,6 +1302,10 @@ const bMao=document.createElement('button'); bMao.className='acc';
 bMao.textContent='\ud83e\udd1a M\u00e3o rob\u00f3tica';
 bMao.onclick=function(){ B.maoRobotica(); };
 shelf.appendChild(bMao);
+const bDif=document.createElement('button'); bDif.className='acc';
+bDif.textContent='\u2699 Diferencial';
+bDif.onclick=function(){ B.diferencial(); };
+shelf.appendChild(bDif);
 
 function slider(box,label,min,max,step,val,fmt,onch){
   const row=document.createElement('div'); row.className='sl';
@@ -1619,7 +1660,47 @@ function montarMaoRobotica(){
   verTudo(); sel=[]; selLink=null; paint(); ui();
 }
 
+// preset: diferencial completo — gaiola motorizada, 2 satélites, 2 planetárias
+// calibrado por medição: lado travado -> lado livre gira 2.12x a gaiola (ideal 2.0)
+function montarDiferencial(){
+  snapshot();
+  const H=0.45, DX=0.058, YS=0.0504;
+  const F=addPart('placa',new CANNON.Vec3(0,H,-0.25));
+  F.par.larg=0.14; F.par.prof=0.10; rebuild(F); fixarPeca(F,true);
+  F.home=F.body.position.clone(); F.hq=F.body.quaternion.clone();
+  const GA=addPart('difcoroa',new CANNON.Vec3(0,H,0));
+  GA.home=GA.body.position.clone(); GA.hq=GA.body.quaternion.clone();
+  function pino(a,b){
+    const pv=new THREE.Vector3(b.body.position.x,b.body.position.y,b.body.position.z);
+    const r=montarLigacao(a,b,'pino',pv,new THREE.Vector3(1,0,0));
+    ligAdd(r.c,'pino'); politicaColisao(r.c,'pino',a,b);
+    const mk=mkMarcador('pino',false); scene.add(mk);
+    const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),new THREE.MeshBasicMaterial({color:0xd9a04a}));
+    scene.add(mkB);
+    const l={c:r.c,kind:'pino',a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
+      pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv,curso:cursoDa(a),axAz:0,axEl:0,
+      motor:{on:false,vel:0,mag:2,forca:30,ativo:false}};
+    links.push(l); return l;
+  }
+  const lm=pino(F,GA); lm.motor.on=true; aplicarMotor(lm);
+  [[-DX,false],[DX,true]].forEach(function(cfg){
+    const p=addPart('coroa',new CANNON.Vec3(cfg[0],H,0));
+    p.par.raio=0.06; p.par.dentes=12; p.par.esp=0.015; rebuild(p);
+    if(cfg[1]){ p.rot.y=180; setRot(p); p.body.position.set(cfg[0],H,0); }
+    p.home=p.body.position.clone(); p.hq=p.body.quaternion.clone();
+    pino(F,p);
+  });
+  [YS,-YS].forEach(function(y){
+    const p=addPart('dentada',new CANNON.Vec3(0,H+y,0));
+    p.par.raio=0.035; p.par.dentes=10; p.par.esp=0.012; p.par.raios=0; rebuild(p);
+    p.rot.z=90; setRot(p); p.body.position.set(0,H+y,0);
+    p.home=p.body.position.clone(); p.hq=p.body.quaternion.clone();
+    pino(GA,p);
+  });
+  verTudo(); sel=[]; selLink=null; paint(); ui();
+}
 window.B={
+  diferencial:function(){ try{ montarDiferencial(); }catch(e){ shout('diferencial: '+e.message); } },
   desfazer:desfazer,
   encaixe:function(){ encaixeOn=!encaixeOn;
     const b=document.getElementById('btEnc'); if(b) b.style.opacity=encaixeOn?'1':'0.35';
