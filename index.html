@@ -24,6 +24,7 @@
       <button class="zb" onclick="B.vista('f')" title="vista frontal" style="font-size:12px">FREN</button>
       <button class="zb" onclick="B.vista('l')" title="vista lateral" style="font-size:12px">LADO</button>
       <button class="zb" id="btGrav" onclick="B.gravidade()" title="gravidade liga/desliga" style="font-size:14px">🌍</button>
+      <button class="zb" id="btEnc" onclick="B.encaixe()" title="encaixe assistido no eixo" style="font-size:14px">🧲</button>
     </div>
   </div>
 
@@ -73,6 +74,7 @@
   <div style="padding:9px 12px;border-top:1px solid #2c2d34;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
     <button class="go" id="playBtn" onclick="B.play()">▶ Testar</button>
     <button id="btDesfazer" onclick="B.desfazer()" style="opacity:0.4" disabled>↶ Desfazer</button>
+    <button onclick="B.compartilhar()" title="compartilhar por link">🔗</button>
     <button onclick="B.reset()">Reiniciar</button>
     <button onclick="B.clear()">Limpar</button>
     <span id="stat" style="margin-left:auto;font-size:12px;color:#8b8d98"></span>
@@ -95,7 +97,9 @@
 </div>
 
 <style>
-  #app button{background:#26272e;color:#d8d9e0;border:1px solid #383941;border-radius:7px;padding:7px 11px;font-size:13px;cursor:pointer;font-family:inherit}
+  #app button{background:linear-gradient(180deg,#2a2b33,#232429);color:#d8d9e0;border:1px solid #3b3c46;border-radius:8px;padding:7px 11px;font-size:13px;cursor:pointer;font-family:inherit;transition:filter .12s, transform .06s}
+  #app button:active{filter:brightness(1.25);transform:translateY(1px)}
+  #app input[type=range]{accent-color:#6fd6c8}
   #app button:active{background:#31323a}
   #app .acc{border-color:#5a6f96;background:#28334a;color:#c6d8f2}
   #app .go{border-color:#3f6a4a;background:#22301f;color:#b7e0b9}
@@ -125,12 +129,22 @@ const cam=new THREE.PerspectiveCamera(50,1,0.01,100);
 const rend=new THREE.WebGLRenderer({antialias:true});
 rend.domElement.style.display='block';
 stage.insertBefore(rend.domElement, stage.firstChild);
-scene.add(new THREE.HemisphereLight(0xbfd4ff,0x30302c,0.9));
-const dl=new THREE.DirectionalLight(0xffffff,0.7); dl.position.set(3,6,3); scene.add(dl);
-scene.add(new THREE.GridHelper(4,20,0x3a3b44,0x2a2b33));
+scene.background=new THREE.Color(0x191a20);
+scene.fog=new THREE.Fog(0x191a20, 5, 13);
+scene.add(new THREE.HemisphereLight(0xbfd4ff,0x2a2824,0.85));
+const dl=new THREE.DirectionalLight(0xfff4e0,0.75); dl.position.set(3,6,3); scene.add(dl);
+const dl2=new THREE.DirectionalLight(0x8ab0e0,0.25); dl2.position.set(-4,3,-2); scene.add(dl2);
+const chao=new THREE.Mesh(new THREE.CircleGeometry(7,48),
+  new THREE.MeshLambertMaterial({color:0x1e1f26}));
+chao.rotation.x=-Math.PI/2; chao.position.y=-0.003; scene.add(chao);
+scene.add(new THREE.GridHelper(4,20,0x3d3f4a,0x272831));
+const vin=document.createElement('div');
+vin.style.cssText='position:absolute;inset:0;pointer-events:none;'+
+  'background:radial-gradient(ellipse at 50% 42%, transparent 55%, rgba(0,0,0,0.34) 100%)';
+stage.appendChild(vin);
 
 const world=new CANNON.World();
-world.gravity.set(0,-9.82,0); world.solver.iterations=200;  // firmeza em cadeias de solda
+world.gravity.set(0,-9.82,0); world.solver.iterations=300; world.solver.tolerance=0;  // rigidez máxima medida
 world.defaultContactMaterial.friction=0.6;
 const ground=new CANNON.Body({mass:0,shape:new CANNON.Plane()});
 ground.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0),-Math.PI/2);
@@ -197,13 +211,16 @@ function resize(){ const w=stage.clientWidth,h=stage.clientHeight; if(!w||!h) re
   cam.aspect=w/h; cam.updateProjectionMatrix(); placeCam(); }
 new ResizeObserver(resize).observe(stage);
 
-const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8};
+const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8,coroa:0x9a8a70,eixo:0xb8bcc6,came:0xc06a5a};
 const CAT={
-  barra:{nome:'Barra reta',p:{comp:{r:[0.1,1.2],v:0.5,u:'m'},esp:{r:[0.01,0.06],v:0.025,u:'m'}}},
-  arco:{nome:'Semicirculo',p:{raio:{r:[0.08,0.6],v:0.25,u:'m'},arco:{r:[20,360],v:180,u:'\u00b0'},esp:{r:[0.01,0.05],v:0.02,u:'m'}}},
+  barra:{nome:'Barra reta',p:{comp:{r:[0.02,1.2],v:0.5,u:'m'},esp:{r:[0.005,0.06],v:0.025,u:'m'}}},
+  arco:{nome:'Semicirculo',p:{raio:{r:[0.04,0.6],v:0.25,u:'m'},arco:{r:[20,360],v:180,u:'\u00b0'},esp:{r:[0.005,0.05],v:0.02,u:'m'}}},
   placa:{nome:'Placa',p:{larg:{r:[0.05,0.9],v:0.35,u:'m'},prof:{r:[0.05,0.9],v:0.22,u:'m'},esp:{r:[0.004,0.05],v:0.012,u:'m'}}},
   roda:{nome:'Roda',p:{raio:{r:[0.03,0.25],v:0.09,u:'m'},larg:{r:[0.01,0.1],v:0.035,u:'m'}}},
-  dentada:{nome:'Roda dentada',p:{raio:{r:[0.04,0.25],v:0.09,u:'m'},dentes:{r:[6,24],v:12,u:''},esp:{r:[0.01,0.06],v:0.03,u:'m'}}}
+  dentada:{nome:'Roda dentada',p:{raio:{r:[0.04,0.25],v:0.09,u:'m'},dentes:{r:[6,24],v:12,u:''},esp:{r:[0.01,0.06],v:0.03,u:'m'},raios:{r:[0,6],v:0,u:''}}},
+  coroa:{nome:'Coroa (dentes laterais)',p:{raio:{r:[0.04,0.25],v:0.09,u:'m'},dentes:{r:[6,24],v:12,u:''},esp:{r:[0.008,0.04],v:0.015,u:'m'}}},
+  eixo:{nome:'Eixo cilíndrico',p:{comp:{r:[0.04,0.8],v:0.3,u:'m'},raio:{r:[0.008,0.05],v:0.018,u:'m'}}},
+  came:{nome:'Came (excêntrico)',p:{raio:{r:[0.03,0.18],v:0.07,u:'m'},exc:{r:[0,0.08],v:0.03,u:'m'},esp:{r:[0.01,0.05],v:0.025,u:'m'}}}
 };
 let parts=[],sel=[],running=false,nId=0,hingeAx=0,links=[];
 
@@ -222,7 +239,7 @@ function build(tipo,par){
     const seg=2*par.raio*Math.sin(tot/(2*n)), e=par.esp;
     for(let i=0;i<n;i++){
       const a=-tot/2+tot*(i+0.5)/n;
-      const px=par.raio*Math.sin(a), pz=par.raio*Math.cos(a)-par.raio;
+      const px=par.raio*Math.sin(a), pz=par.raio*Math.cos(a);
       const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(0,1,0),a);
       shapes.push({s:new CANNON.Box(new CANNON.Vec3(seg/2*1.03,e/2,e/2)),o:new CANNON.Vec3(px,0,pz),q:q});
       const m=new THREE.Mesh(new THREE.BoxGeometry(seg*1.03,e,e),mat);
@@ -247,11 +264,91 @@ function build(tipo,par){
       dm.position.set(0,(R+alt/2-0.002)*Math.cos(a),(R+alt/2-0.002)*Math.sin(a));
       dm.rotation.x=a; g.add(dm);
     }
-    const disco=new THREE.Mesh(new THREE.CylinderGeometry(R,R,e,28),mat);
-    disco.rotation.z=Math.PI/2; g.add(disco);
+    const nR=Math.round(par.raios||0);
+    if(nR>=2){
+      // vazada: anel externo + cubo + raios; os vãos ficam abertos de verdade (colisão inclusa)
+      const anel=new THREE.Mesh(new THREE.TorusGeometry(R*0.90,e*0.45,10,30),mat);
+      anel.rotation.y=Math.PI/2; g.add(anel);
+      const hubR=R*0.28;
+      for(let i=0;i<nR;i++){
+        const a=2*Math.PI*i/nR, compR=(R*0.86-hubR);
+        const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+        shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,compR/2,e*0.45)),
+          o:new CANNON.Vec3(0,(hubR+compR/2)*Math.cos(a),(hubR+compR/2)*Math.sin(a)),q:q});
+        const rm=new THREE.Mesh(new THREE.BoxGeometry(e,compR,e*0.9),mat);
+        rm.position.set(0,(hubR+compR/2)*Math.cos(a),(hubR+compR/2)*Math.sin(a));
+        rm.rotation.x=a; g.add(rm);
+      }
+    } else {
+      const disco=new THREE.Mesh(new THREE.CylinderGeometry(R,R,e,28),mat);
+      disco.rotation.z=Math.PI/2; g.add(disco);
+    }
     const cubo=new THREE.Mesh(new THREE.CylinderGeometry(R*0.28,R*0.28,e*1.5,16),
       new THREE.MeshLambertMaterial({color:0x5a6170}));
     cubo.rotation.z=Math.PI/2; g.add(cubo);
+    shapes.push({s:new CANNON.Box(new CANNON.Vec3(e*0.75,R*0.2,R*0.2)),
+      o:new CANNON.Vec3(0,0,0),q:new CANNON.Quaternion()});
+  } else if(tipo==='coroa'){
+    const R=par.raio, N=Math.max(4,Math.round(par.dentes)), e=par.esp;
+    const passo=2*Math.PI*R/N, altAx=Math.min(0.30*R,passo*0.5), larg=passo*0.42, prof=R*0.16;
+    // disco (colisão: aro de segmentos + cubo central)
+    const nSeg=Math.max(10,N);
+    for(let i=0;i<nSeg;i++){
+      const a=2*Math.PI*(i+0.5)/nSeg;
+      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,R*0.10,R*Math.sin(Math.PI/nSeg)*1.05)),
+        o:new CANNON.Vec3(0,R*0.93*Math.cos(a),R*0.93*Math.sin(a)),q:q});
+    }
+    shapes.push({s:new CANNON.Box(new CANNON.Vec3(e*0.75,R*0.2,R*0.2)),
+      o:new CANNON.Vec3(0,0,0),q:new CANNON.Quaternion()});
+    // dentes axiais na borda da face +X
+    for(let i=0;i<N;i++){
+      const a=2*Math.PI*i/N, rD=R-prof/2-0.002;
+      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(altAx/2,prof/2,larg/2)),
+        o:new CANNON.Vec3(e/2+altAx/2-0.002,rD*Math.cos(a),rD*Math.sin(a)),q:q});
+      const dm=new THREE.Mesh(new THREE.BoxGeometry(altAx,prof,larg),mat);
+      dm.position.set(e/2+altAx/2-0.002,rD*Math.cos(a),rD*Math.sin(a));
+      dm.rotation.x=a; g.add(dm);
+    }
+    const disco=new THREE.Mesh(new THREE.CylinderGeometry(R,R,e,28),mat);
+    disco.rotation.z=Math.PI/2; g.add(disco);
+    const cubo=new THREE.Mesh(new THREE.CylinderGeometry(R*0.28,R*0.28,e*1.8,16),
+      new THREE.MeshLambertMaterial({color:0x5a6170}));
+    cubo.rotation.z=Math.PI/2; g.add(cubo);
+  } else if(tipo==='eixo'){
+    // prisma octogonal: 4 caixas giradas — evita o afundamento do Cylinder do Cannon
+    const L=par.comp, r=par.raio;
+    for(let i=0;i<4;i++){
+      const a=i*Math.PI/4;
+      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(L/2,r*0.924,r*0.383)),
+        o:new CANNON.Vec3(0,0,0),q:q});
+    }
+    const cil=new THREE.Mesh(new THREE.CylinderGeometry(r,r,L,20),mat);
+    cil.rotation.z=Math.PI/2; g.add(cil);
+    const p1=new THREE.Mesh(new THREE.CylinderGeometry(r*1.15,r*1.15,r*0.5,16),
+      new THREE.MeshLambertMaterial({color:0x8a8f9c}));
+    p1.rotation.z=Math.PI/2; p1.position.x=L/2-r*0.25; g.add(p1);
+    const p2=p1.clone(); p2.position.x=-L/2+r*0.25; g.add(p2);
+  } else if(tipo==='came'){
+    // disco excêntrico: gira na ORIGEM, centro geométrico deslocado exc em +Z local
+    const R=par.raio, ex=par.exc, e=par.esp, nSeg=18;
+    for(let i=0;i<nSeg;i++){
+      const a=2*Math.PI*(i+0.5)/nSeg;
+      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,R*0.10,R*Math.sin(Math.PI/nSeg)*1.05)),
+        o:new CANNON.Vec3(0,R*0.93*Math.cos(a),ex+R*0.93*Math.sin(a)),q:q});
+    }
+    shapes.push({s:new CANNON.Box(new CANNON.Vec3(e*0.7,R*0.22,R*0.22)),
+      o:new CANNON.Vec3(0,0,ex),q:new CANNON.Quaternion()});
+    shapes.push({s:new CANNON.Box(new CANNON.Vec3(e*0.7,R*0.12,Math.max(ex,R*0.12))),
+      o:new CANNON.Vec3(0,0,ex/2),q:new CANNON.Quaternion()});
+    const disco=new THREE.Mesh(new THREE.CylinderGeometry(R,R,e,26),mat);
+    disco.rotation.z=Math.PI/2; disco.position.z=ex; g.add(disco);
+    const eixoV=new THREE.Mesh(new THREE.CylinderGeometry(R*0.16,R*0.16,e*1.7,14),
+      new THREE.MeshLambertMaterial({color:0x5a6170}));
+    eixoV.rotation.z=Math.PI/2; g.add(eixoV);
   } else if(tipo==='roda'){
     // colisão ESFÉRICA (cilindro do cannon afunda 80mm; esfera 0mm — medido)
     shapes.push({s:new CANNON.Sphere(par.raio),o:new CANNON.Vec3()});
@@ -275,6 +372,42 @@ function fixarPeca(p,fixa){
   if(fixa){ p.body.mass=0; p.body.updateMassProperties(); p.body.type=CANNON.Body.STATIC;
     p.body.velocity.set(0,0,0); p.body.angularVelocity.set(0,0,0); }
   else { p.body.type=CANNON.Body.DYNAMIC; p.body.mass=p.massa||1; p.body.updateMassProperties(); }
+}
+let encaixeOn=true;
+// ao soltar uma peça rotativa perto de um eixo: centra no eixo e alinha a orientação
+function tentarEncaixe(p){
+  if(!encaixeOn || !p) return;
+  if(['roda','dentada','coroa','came'].indexOf(p.tipo)<0) return;
+  if(grupoDe(p).length>1) return;              // só peça avulsa; montada não salta
+  let melhor=null;
+  parts.forEach(function(e){
+    if(e.tipo!=='eixo'||e===p) return;
+    const ax=new THREE.Vector3(1,0,0).applyQuaternion(
+      new THREE.Quaternion(e.body.quaternion.x,e.body.quaternion.y,e.body.quaternion.z,e.body.quaternion.w));
+    const O=new THREE.Vector3(e.body.position.x,e.body.position.y,e.body.position.z);
+    const P=new THREE.Vector3(p.body.position.x,p.body.position.y,p.body.position.z);
+    const t=P.clone().sub(O).dot(ax);
+    if(Math.abs(t)>e.par.comp/2) return;       // fora do trecho do eixo
+    const proj=O.clone().add(ax.clone().multiplyScalar(t));
+    const dist=P.distanceTo(proj);
+    const limiar=Math.max(0.05,(p.par.raio||0.05)*0.9);
+    if(dist<limiar && (!melhor||dist<melhor.dist)) melhor={e:e,ax:ax,proj:proj,dist:dist};
+  });
+  if(!melhor) return;
+  // centra no eixo
+  p.body.position.set(melhor.proj.x,Math.max(0.02,melhor.proj.y),melhor.proj.z);
+  // alinha o eixo próprio (X local) ao eixo do cilindro
+  const px=new THREE.Vector3(1,0,0).applyQuaternion(
+    new THREE.Quaternion(p.body.quaternion.x,p.body.quaternion.y,p.body.quaternion.z,p.body.quaternion.w));
+  if(px.dot(melhor.ax)<0) melhor.ax.negate();  // pega o sentido mais próximo
+  const qAli=new THREE.Quaternion().setFromUnitVectors(px,melhor.ax);
+  const qNovo=qAli.multiply(new THREE.Quaternion(p.body.quaternion.x,p.body.quaternion.y,p.body.quaternion.z,p.body.quaternion.w));
+  p.body.quaternion.set(qNovo.x,qNovo.y,qNovo.z,qNovo.w);
+  const eul=new THREE.Euler().setFromQuaternion(qNovo,'XYZ');
+  p.rot.x=eul.x*180/Math.PI; p.rot.y=eul.y*180/Math.PI; p.rot.z=eul.z*180/Math.PI;
+  p.home=p.body.position.clone(); p.hq=p.body.quaternion.clone();
+  p.body.velocity.set(0,0,0); p.body.angularVelocity.set(0,0,0);
+  sync(); ui();
 }
 function setRot(p){
   const q=new CANNON.Quaternion();
@@ -366,6 +499,7 @@ function limitarTrilhos(){
 // comprimento útil do trilho, vindo da peça que serve de haste
 function cursoDa(p){
   if(p.tipo==='barra') return p.par.comp;
+  if(p.tipo==='eixo') return p.par.comp;
   if(p.tipo==='placa') return Math.max(p.par.larg,p.par.prof);
   if(p.tipo==='arco') return p.par.raio*2;
   return 0.3;
@@ -432,6 +566,20 @@ function limparTudo(){
 }
 
 // ═══ DESFAZER: pilha de estados, capturada ANTES de cada ação que muda a montagem ═══
+function linkDaMaquina(){
+  const json=JSON.stringify(serializarTudo());
+  const b64=btoa(unescape(encodeURIComponent(json)));
+  return location.href.split('#')[0]+'#m='+b64;
+}
+function carregarDoHash(hs){
+  const hh=(hs!==undefined)?hs:location.hash;
+  if(!hh || hh.indexOf('#m=')!==0) return false;
+  const json=decodeURIComponent(escape(atob(hh.slice(3))));
+  const dados=JSON.parse(json);
+  limparTudo(); instanciarModelo(dados,{x:0,y:0,z:0});
+  sync(); paint(); ui();
+  return true;
+}
 let undoStack=[];
 function snapshot(){
   undoStack.push(serializarTudo());
@@ -799,10 +947,17 @@ function pontosLocais(p){
   } else if(p.tipo==='roda'){
     add(q.larg/2,0,0,'eixo'); add(-q.larg/2,0,0,'eixo');
     add(0,q.raio,0,'aro'); add(0,-q.raio,0,'aro');
+  } else if(p.tipo==='came'){
+    add(0,0,0,'eixo de giro'); add(0,0,q.exc,'centro do disco'); add(0,0,q.exc+q.raio,'borda');
+  } else if(p.tipo==='eixo'){
+    add(q.comp/2,0,0,'ponta'); add(-q.comp/2,0,0,'ponta');
+  } else if(p.tipo==='dentada'||p.tipo==='coroa'){
+    add(q.esp/2,0,0,'face'); add(-q.esp/2,0,0,'face');
   } else if(p.tipo==='arco'){
     const tot=q.arco*Math.PI/180;
-    [-1,1].forEach(s=>add(q.raio*Math.sin(s*tot/2),0,q.raio*Math.cos(s*tot/2)-q.raio,'ponta'));
-    add(0,0,-q.raio,'centro do arco');
+    [-1,1].forEach(s=>add(q.raio*Math.sin(s*tot/2),0,q.raio*Math.cos(s*tot/2),'ponta'));
+    add(0,0,0,'centro do círculo');
+    add(0,0,q.raio,'topo do arco');
   }
   return L;
 }
@@ -1095,6 +1250,7 @@ function up(){ if(dragLink){ dragLink=false; last=null; moved=0;
     const p=drag||pick(last.x,last.y);
     if(p){ selLink=null; toggle(p); } else { sel=[]; selLink=null; paint(); ui(); } }
   if(dragPiv){ dragPiv=false; last=null; return; }
+  if(drag && moved>=8){ try{ tentarEncaixe(drag); }catch(e){ shout('encaixe: '+e.message); } }
   last=null; drag=null; pinch=null; cen=null; panning=false; }
 stage.addEventListener('contextmenu',function(e){e.preventDefault();});
 stage.addEventListener('mousedown',down); stage.addEventListener('touchstart',down,{passive:false});
@@ -1465,6 +1621,20 @@ function montarMaoRobotica(){
 
 window.B={
   desfazer:desfazer,
+  encaixe:function(){ encaixeOn=!encaixeOn;
+    const b=document.getElementById('btEnc'); if(b) b.style.opacity=encaixeOn?'1':'0.35';
+    shout(encaixeOn?'encaixe assistido LIGADO':'encaixe assistido desligado'); },
+  compartilhar:function(){
+    if(!parts.length){ shout('monte algo antes de compartilhar'); return; }
+    try{
+      const url=linkDaMaquina();
+      if(navigator.share){ navigator.share({title:'Bancada de Mecânica',url:url}).catch(function(){}); return; }
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(url).then(function(){ shout('link copiado! cole onde quiser'); },
+          function(){ window.prompt('Copie o link:',url); }); return; }
+      window.prompt('Copie o link:',url);
+    }catch(e){ shout('compartilhar: '+e.message); }
+  },
   fixar:function(){ const p=sel[0]; if(!p) return; snapshot(); fixarPeca(p,!p.fixa); ui(); },
   vista:function(v){
     if(v==='t'){ orb.az=0.001; orb.el=1.35; }
@@ -1529,11 +1699,14 @@ window.B={
                            setSel:function(a){ sel=a; paint(); ui(); }}; }
 };
 (function loop(){ requestAnimationFrame(loop);
-  if(running){ molas.forEach(function(m){ m.applyForce(); }); world.step(1/60); limitarTrilhos(); sync(); }
+  if(running){
+    for(let sp=0; sp<2; sp++){ molas.forEach(function(m){ m.applyForce(); }); world.step(1/120); }
+    limitarTrilhos(); sync(); }
   if(seguindo){ orb.t.lerp(new THREE.Vector3(seguindo.body.position.x,
       seguindo.body.position.y, seguindo.body.position.z), 0.18); placeCam(); }
   rend.render(scene,cam); })();
 resize(); ui(); renderModelos(); atualizarBtDesfazer();
+try{ if(carregarDoHash()) shout('máquina carregada do link!'); }catch(e){ shout('link: '+e.message); }
 }catch(err){ shout('FALHA NA CARGA: '+err.message); }
 </script>
 
