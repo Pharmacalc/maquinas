@@ -74,7 +74,9 @@
   <div style="padding:9px 12px;border-top:1px solid #2c2d34;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
     <button class="go" id="playBtn" onclick="B.play()">▶ Testar</button>
     <button id="btDesfazer" onclick="B.desfazer()" style="opacity:0.4" disabled>↶ Desfazer</button>
-    <button onclick="B.compartilhar()" title="compartilhar por link">🔗</button>
+    <button onclick="B.compartilhar()" title="compartilhar por link (máquinas pequenas)">🔗</button>
+    <button onclick="B.exportar()" title="salvar arquivo .json">💾</button>
+    <button onclick="B.importar()" title="abrir arquivo .json">📂</button>
     <button onclick="B.reset()">Reiniciar</button>
     <button onclick="B.clear()">Limpar</button>
     <span id="stat" style="margin-left:auto;font-size:12px;color:#8b8d98"></span>
@@ -116,7 +118,16 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
 <script>
-function shout(m){ var e=document.getElementById('err'); e.style.display='block'; e.textContent+=m+'\n';
+function avisar(m){  // aviso verde, some sozinho — não confundir com erro
+  var e=document.getElementById('err');
+  e.style.display='block'; e.style.background='#1d3a22'; e.style.color='#a8e0a0';
+  e.textContent=m;
+  e.onclick=function(){ e.style.display='none'; e.textContent=''; };
+  clearTimeout(e._t);
+  e._t=setTimeout(function(){ e.style.display='none'; e.textContent='';
+    e.style.background=''; e.style.color=''; },3500);
+}
+function shout(m){ var e=document.getElementById('err'); e.style.background=''; e.style.color=''; e.style.display='block'; e.textContent+=m+'\n';
   e.onclick=function(){ e.style.display='none'; e.textContent=''; }; }
 window.addEventListener('error',function(ev){ shout('ERRO: '+ev.message+' @'+ev.lineno); });
 try{
@@ -625,10 +636,42 @@ function limparTudo(){
 }
 
 // ═══ DESFAZER: pilha de estados, capturada ANTES de cada ação que muda a montagem ═══
+let _ultimaCena='';
+function salvarCena(){
+  if(!TEM_STORAGE) return;
+  try{
+    const json=JSON.stringify(serializarTudo());
+    if(json===_ultimaCena) return;
+    localStorage.setItem('bancada:cena',json);
+    _ultimaCena=json;
+  }catch(e){}
+}
+function carregarCenaSalva(){
+  if(!TEM_STORAGE) return false;
+  try{
+    const json=localStorage.getItem('bancada:cena');
+    if(!json) return false;
+    const dados=JSON.parse(json);
+    if(!dados.partes || !dados.partes.length) return false;
+    limparTudo(); instanciarModelo(dados,{x:0,y:0,z:0});
+    sync(); paint(); ui();
+    return true;
+  }catch(e){ return false; }
+}
+setInterval(salvarCena,4000);
+window.addEventListener('beforeunload',salvarCena);
 function linkDaMaquina(){
   const json=JSON.stringify(serializarTudo());
   const b64=btoa(unescape(encodeURIComponent(json)));
   return location.href.split('#')[0]+'#m='+b64;
+}
+function importarJson(json){
+  const dados=JSON.parse(json);
+  if(!dados.partes) throw new Error('arquivo não parece uma máquina da bancada');
+  snapshot();
+  limparTudo(); instanciarModelo(dados,{x:0,y:0,z:0});
+  sync(); paint(); ui(); salvarCena();
+  avisar('máquina importada ✓');
 }
 function carregarDoHash(hs){
   const hh=(hs!==undefined)?hs:location.hash;
@@ -1784,13 +1827,38 @@ window.B={
   encaixe:function(){ encaixeOn=!encaixeOn;
     const b=document.getElementById('btEnc'); if(b) b.style.opacity=encaixeOn?'1':'0.35';
     shout(encaixeOn?'encaixe assistido LIGADO':'encaixe assistido desligado'); },
+  exportar:function(){
+    if(!parts.length){ shout('monte algo antes de exportar'); return; }
+    try{
+      const json=JSON.stringify(serializarTudo(),null,1);
+      const blob=new Blob([json],{type:'application/json'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      const dt=new Date(), pad=n=>String(n).padStart(2,'0');
+      a.download='maquina-'+dt.getFullYear()+pad(dt.getMonth()+1)+pad(dt.getDate())+'-'+pad(dt.getHours())+pad(dt.getMinutes())+'.json';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },2000);
+      avisar('arquivo baixado — guarde-o ou envie por qualquer app');
+    }catch(e){ shout('exportar: '+e.message); }
+  },
+  importar:function(){
+    const inp=document.createElement('input');
+    inp.type='file'; inp.accept='.json,application/json';
+    inp.onchange=function(){
+      const f=inp.files&&inp.files[0]; if(!f) return;
+      const r=new FileReader();
+      r.onload=function(){ try{ importarJson(r.result); }catch(e){ shout('importar: '+e.message); } };
+      r.readAsText(f);
+    };
+    inp.click();
+  },
   compartilhar:function(){
     if(!parts.length){ shout('monte algo antes de compartilhar'); return; }
     try{
       const url=linkDaMaquina();
       if(navigator.share){ navigator.share({title:'Bancada de Mecânica',url:url}).catch(function(){}); return; }
       if(navigator.clipboard&&navigator.clipboard.writeText){
-        navigator.clipboard.writeText(url).then(function(){ shout('link copiado! cole onde quiser'); },
+        navigator.clipboard.writeText(url).then(function(){ avisar('link copiado! cole onde quiser'); },
           function(){ window.prompt('Copie o link:',url); }); return; }
       window.prompt('Copie o link:',url);
     }catch(e){ shout('compartilhar: '+e.message); }
@@ -1866,7 +1934,10 @@ window.B={
       seguindo.body.position.y, seguindo.body.position.z), 0.18); placeCam(); }
   rend.render(scene,cam); })();
 resize(); ui(); renderModelos(); atualizarBtDesfazer();
-try{ if(carregarDoHash()) shout('máquina carregada do link!'); }catch(e){ shout('link: '+e.message); }
+try{
+  if(carregarDoHash()) avisar('máquina carregada do link!');
+  else if(carregarCenaSalva()) avisar('sua última cena foi restaurada ✓ (salva automaticamente)');
+}catch(e){ shout('restaurar: '+e.message); }
 }catch(err){ shout('FALHA NA CARGA: '+err.message); }
 </script>
 
