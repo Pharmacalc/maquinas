@@ -489,6 +489,21 @@ function soldar(a,b){
 }
 // O Cannon não tem junta prismática. Construída com o que ele tem:
 // trava as 2 direções perpendiculares, libera a 3ª, e trava a rotação.
+// equação de motor linear: leva a velocidade relativa ao longo do eixo ao alvo
+function LinMotorEq(bi,bj){
+  CANNON.Equation.call(this,bi,bj,-1e4,1e4);
+  this.axis=new CANNON.Vec3(1,0,0);
+  this.targetVelocity=0;
+}
+LinMotorEq.prototype=Object.create(CANNON.Equation.prototype);
+LinMotorEq.prototype.constructor=LinMotorEq;
+LinMotorEq.prototype.computeB=function(h){
+  const GA=this.jacobianElementA, GB=this.jacobianElementB;
+  this.axis.negate(GA.spatial);
+  GB.spatial.copy(this.axis);
+  const GW=this.computeGW()-this.targetVelocity;
+  return -GW*this.b - h*this.computeGiMf();
+};
 function fazTrilho(a,b,pa,pb,dirW){
   const V=CANNON.Vec3;
   const c=new CANNON.PointToPointConstraint(a,pa,b,pb,1e6);
@@ -511,6 +526,16 @@ function fazTrilho(a,b,pa,pb,dirW){
     a.vectorToWorldFrame(zA,r3.axisA); b.vectorToWorldFrame(xB,r3.axisB);
   };
   c._dirLocalA=dA;
+  // motor linear com a MESMA API do HingeConstraint (aplicarMotor não muda)
+  const lin=new LinMotorEq(a,b);
+  c._linEq=lin;
+  const upBase=c.update;
+  c.update=function(){ upBase.call(this);
+    const d2=a.quaternion.vmult(dA); d2.normalize(); lin.axis.copy(d2); };
+  c.enableMotor=function(){ if(this.equations.indexOf(lin)<0) this.equations.push(lin); };
+  c.disableMotor=function(){ const i=this.equations.indexOf(lin); if(i>=0) this.equations.splice(i,1); };
+  c.setMotorSpeed=function(v){ lin.targetVelocity=v; };
+  c.setMotorMaxForce=function(f){ lin.minForce=-f; lin.maxForce=f; };
   return c;
 }
 // fim de curso: sem isto o carro sai voando pela ponta da haste
@@ -727,7 +752,24 @@ function montarLigacao(a,b,kind,pivW,axDir,opts){
     return {c:c,pa:new CANNON.Vec3(0,0,0),pb:new CANNON.Vec3(0,0,0),axL:null};
   }
   if(kind==='weld') c=soldar(a.body,b.body);
-  else if(kind==='ball') c=new CANNON.PointToPointConstraint(a.body,pa,b.body,pb,1e6);
+  else if(kind==='ball'){
+    c=new CANNON.PointToPointConstraint(a.body,pa,b.body,pb,1e6);
+    // motor de giro em torno do eixo escolhido; os outros 2 graus continuam livres
+    const dn=axDir.clone().normalize();
+    const axW=new CANNON.Vec3(dn.x,dn.y,dn.z);
+    const axLA=a.body.quaternion.inverse().vmult(axW);
+    const axLB=b.body.quaternion.inverse().vmult(axW);
+    const rEq=new CANNON.RotationalMotorEquation(a.body,b.body);
+    rEq.targetVelocity=0; rEq.minForce=-30; rEq.maxForce=30;
+    const upB=CANNON.PointToPointConstraint.prototype.update;
+    c.update=function(){ upB.call(this);
+      a.body.vectorToWorldFrame(axLA,rEq.axisA);
+      b.body.vectorToWorldFrame(axLB,rEq.axisB); };
+    c.enableMotor=function(){ if(this.equations.indexOf(rEq)<0) this.equations.push(rEq); };
+    c.disableMotor=function(){ const i=this.equations.indexOf(rEq); if(i>=0) this.equations.splice(i,1); };
+    c.setMotorSpeed=function(v){ rEq.targetVelocity=v; };
+    c.setMotorMaxForce=function(f){ rEq.minForce=-f; rEq.maxForce=f; };
+  }
   else if(kind==='trilho'){
     c=fazTrilho(a.body,b.body,pa,pb,axDir);
     axL=c._dirLocalA;
@@ -750,7 +792,7 @@ function montarLigacao(a,b,kind,pivW,axDir,opts){
 }
 // REFAZ a ligação com o pivô/eixo/tipo novos — é o que torna a junta editável
 function aplicarMotor(l){
-  if(!l.motor || (l.kind!=='hinge'&&l.kind!=='pino'&&l.kind!=='trilho') || !l.c.enableMotor) return;
+  if(!l.motor || (l.kind!=='hinge'&&l.kind!=='pino'&&l.kind!=='trilho'&&l.kind!=='ball') || !l.c.enableMotor) return;
   if(l.motor.on){
     l.c.enableMotor();
     // MOMENTÂNEO: só gira enquanto houver comando; senão trava em 0
@@ -760,7 +802,8 @@ function aplicarMotor(l){
 }
 function comandar(l,dir){   // dir: -1, 0, +1
   l.motor.ativo = dir!==0;
-  l.motor.vel = dir * Math.abs(l.motor.mag);
+  const escala=(l.kind==='trilho')?0.04:1;   // trilho: mag vira ~m/s plausível (3 -> 12 cm/s)
+  l.motor.vel = dir * Math.abs(l.motor.mag) * escala;
   aplicarMotor(l);
 }
 function refazer(l){
@@ -1104,12 +1147,21 @@ function unir(a,b){
 const ray=new THREE.Raycaster(), ptr=new THREE.Vector2();
 let selLink=null;
 function pickLink(cx,cy){
+  // espaço de TELA: pega a junta mais próxima do dedo (raio 26px) —
+  // confiável mesmo com marcador minúsculo ou dentro da peça
   const r=rend.domElement.getBoundingClientRect();
-  ptr.x=((cx-r.left)/r.width)*2-1; ptr.y=-((cy-r.top)/r.height)*2+1;
-  ray.setFromCamera(ptr,cam);
-  for(let i=0;i<links.length;i++)
-    if(links[i].mk && ray.intersectObject(links[i].mk,true).length) return links[i];
-  return null;
+  let melhor=null, melhorD=26;
+  const v=new THREE.Vector3();
+  links.forEach(function(l){
+    if(!l.mk) return;
+    v.copy(l.pivW).project(cam);
+    if(v.z>1) return;                       // atrás da câmera
+    const sx=( v.x*0.5+0.5)*r.width +r.left;
+    const sy=(-v.y*0.5+0.5)*r.height+r.top;
+    const d=Math.hypot(cx-sx,cy-sy);
+    if(d<melhorD){ melhorD=d; melhor=l; }
+  });
+  return melhor;
 }
 function pick(cx,cy){
   const r=rend.domElement.getBoundingClientRect();
@@ -1343,7 +1395,7 @@ function ui(){
       b.className=selLink.kind===x[0]?'acc':''; b.textContent=x[1];
       b.onclick=function(){ snapshot(); selLink.kind=x[0]; refazer(selLink); ui(); }; bar.appendChild(b);
     });
-    if(selLink.kind!=='weld'&&selLink.kind!=='ball'&&selLink.kind!=='mola'&&selLink.kind!=='engrenagem'&&selLink.kind!=='polia'){
+    if(selLink.kind!=='weld'&&selLink.kind!=='mola'&&selLink.kind!=='engrenagem'&&selLink.kind!=='polia'){
       const lab=document.createElement('span'); lab.style.cssText='font-size:12px;color:#8b8d98';
       lab.textContent='eixo'; bar.appendChild(lab);
       [['X',0,0],['Y',0,90],['Z',90,0]].forEach(function(p){ const b=document.createElement('button');
@@ -1395,7 +1447,7 @@ function ui(){
       box.appendChild(nota);
       document.getElementById('rots').innerHTML='';
     }
-    else if(selLink.kind!=='weld'&&selLink.kind!=='ball'){
+    else if(selLink.kind!=='weld'){
       const ed=document.getElementById('editor'); ed.style.display='block';
       document.getElementById('selName').textContent=NOME[selLink.kind];
       const box=document.getElementById('params'); box.innerHTML='';
@@ -1505,6 +1557,7 @@ function ui(){
         function(v){ one.rot[ax]=v; setRot(one); });
     });
     montarNudge();          // DEPOIS de limpar #rots, senão é apagado
+    montarListaLigacoes(one);
   }
   document.getElementById('stat').textContent=parts.length+' pe\u00e7as \u00b7 '+links.length+' liga\u00e7\u00f5es';
   verPrevia(); verMotores();
@@ -1547,6 +1600,32 @@ function verMotores(){
     row.appendChild(press('\u25b6', 1));
     row.appendChild(mag);
     box.appendChild(row);
+  });
+}
+function montarListaLigacoes(p){
+  const NOMES={weld:'SOLDA',ball:'ESFÉRICA',hinge:'DOBRADIÇA',pino:'PINO',trilho:'TRILHO',mola:'MOLA',engrenagem:'ENGRENAGEM',polia:'POLIA'};
+  const box=document.getElementById('rots');
+  const ligs=links.filter(function(l){ return l.pa===p||l.pb===p; });
+  if(!ligs.length) return;
+  const t=document.createElement('div');
+  t.style.cssText='font-size:11px;letter-spacing:.08em;color:#8b8d98;margin:10px 0 2px';
+  t.textContent='LIGAÇÕES DESTA PEÇA'; box.appendChild(t);
+  ligs.forEach(function(l){
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;gap:4px;margin:3px 0;align-items:center';
+    const outra=(l.pa===p)?l.pb:l.pa;
+    const b=document.createElement('button');
+    b.style.cssText='flex:1;text-align:left;font-size:12px';
+    b.textContent=(NOMES[l.kind]||l.kind)+' com '+CAT[outra.tipo].nome+' #'+outra.id+(l.motor&&l.motor.on?' ⚙':'');
+    b.onclick=function(){ selLink=l; sel=[]; paint(); ui(); };
+    const x=document.createElement('button'); x.textContent='✕';
+    x.style.cssText='padding:6px 12px;color:#e08080';
+    x.onclick=function(){ snapshot(); ligRemove(l.c,l.kind);
+      if(l.mk) scene.remove(l.mk); if(l.mkB) scene.remove(l.mkB);
+      if(selLink===l) selLink=null;
+      links=links.filter(function(z){ return z!==l; });
+      ui(); };
+    row.appendChild(b); row.appendChild(x); box.appendChild(row);
   });
 }
 function montarNudge(){
