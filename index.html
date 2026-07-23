@@ -1409,7 +1409,7 @@ function ui(){
           snapshot(); selLink.axAz=a.az; selLink.axEl=a.el; refazer(selLink); ui(); };
         bar.appendChild(b); });
     }
-    if(selLink.kind==='hinge'||selLink.kind==='pino'){
+    if(selLink.kind==='hinge'||selLink.kind==='pino'||selLink.kind==='trilho'||selLink.kind==='ball'){
       const bm=document.createElement('button');
       bm.className=selLink.motor.on?'go':''; bm.textContent=selLink.motor.on?'⚙ motor ligado':'⚙ motorizar';
       bm.onclick=function(){ selLink.motor.on=!selLink.motor.on; aplicarMotor(selLink); paint(); ui(); verMotores(); };
@@ -1569,7 +1569,7 @@ function verMotores(){
   pn.style.display=mot.length?'block':'none';
   if(!mot.length) return;
   box.innerHTML='';
-  const NOME={hinge:'Dobradiça',pino:'Pino',trilho:'Trilho'};
+  const NOME={hinge:'Dobradiça',pino:'Pino',trilho:'Trilho',ball:'Esférica'};
   mot.forEach(function(l){
     const row=document.createElement('div');
     row.style.cssText='display:flex;align-items:center;gap:6px;margin:4px 0';
