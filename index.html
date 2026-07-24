@@ -626,6 +626,7 @@ function instanciarModelo(dados,origem){
       motor:Object.assign({on:false,vel:0,mag:3,forca:30,ativo:false},dl.motor,{ativo:false,vel:0})};
     links.push(novo); aplicarMotor(novo);
   });
+  recalcularVetos();
   return dados.partes.length?mapa[dados.partes[0].id]:null;
 }
 function limparTudo(){
@@ -633,6 +634,7 @@ function limparTudo(){
   links=[];
   parts.forEach(function(p){ world.removeBody(p.body); scene.remove(p.mesh); });
   parts=[]; sel=[]; selLink=null; seguindo=null; pivotUser=null; pivotLivre=null;
+  recalcularVetos();
 }
 
 // ═══ DESFAZER: pilha de estados, capturada ANTES de cada ação que muda a montagem ═══
@@ -928,7 +930,7 @@ function duplicarBloco(p){
     links.push(nl); aplicarMotor(nl);
   });
   const novo=mapa.get(p);
-  sel=novo?[novo]:[]; selLink=null; paint(); ui(); sync();
+  sel=novo?[novo]:[]; selLink=null; paint(); ui(); sync();  recalcularVetos();
 }
 function espelhar(eixo){
   if(sel.length!==2) return;
@@ -977,7 +979,7 @@ function espelhar(eixo){
       motor:{on:l.motor.on, vel:0, mag:l.motor.mag, forca:l.motor.forca, ativo:false, inv:!l.motor.inv}});
   });
   feitas.forEach(function(l){ links.push(l); aplicarMotor(l); });
-  sel=[]; paint(); ui(); sync();
+  sel=[]; paint(); ui(); sync();  recalcularVetos();
 }
 function join(kind){
   if(sel.length!==2) return;
@@ -1006,7 +1008,7 @@ function join(kind){
               mola:(kind==='mola')?{stiff:c.stiffness,damp:c.damping,rest:c.restLength}:undefined,
               eng:(kind==='engrenagem'||kind==='polia')?{razao:c.razaoAtual}:undefined,
               motor:{on:false,vel:0,mag:3,forca:30,ativo:false}});
-  sel=[]; pivotUser=null; pivotLivre=null; paint(); ui(); sync();
+  sel=[]; pivotUser=null; pivotLivre=null; recalcularVetos(); paint(); ui(); sync();
 }
 const COR={weld:0xffffff, ball:0xb49cff, hinge:0x6fd6c8, pino:0xf0a860,
            trilho:0x62b0f0, mola:0xf0e060, engrenagem:0xe060c0, polia:0xc09060, motor:0x7ee06a};
@@ -1169,6 +1171,34 @@ function aplicarGrupo(p){
   if(p.asm===null){ p.body.collisionFilterGroup=2; p.body.collisionFilterMask=-1; return; }
   const G=1<<((p.asm%28)+2);
   p.body.collisionFilterGroup=G; p.body.collisionFilterMask=-1 & ~G;
+}
+// Dentro de UMA montagem conexa, pares não-ligados-diretamente não devem colidir
+// (peças sobrepostas em nós desmontariam a máquina) — EXCETO quando pelo menos uma
+// é peça de contato funcional (dentada/coroa/came/difcoroa), preservando o
+// engrenamento físico de dentes e o came-seguidor.
+// Mecanismo: constraints fantasma (0 equações) com collideConnected=false —
+// o próprio Cannon poda o par no narrowphase; custo de solver zero.
+let vetos=[];
+function recalcularVetos(){
+  vetos.forEach(function(v){ world.removeConstraint(v); });
+  vetos=[];
+  const CONTATO={dentada:1,coroa:1,came:1,difcoroa:1};
+  const visto={};
+  parts.forEach(function(p){
+    if(visto[p.id]) return;
+    const comp=grupoDe(p);
+    comp.forEach(function(q){ visto[q.id]=1; });
+    for(let i=0;i<comp.length;i++) for(let j=i+1;j<comp.length;j++){
+      const a=comp[i], b=comp[j];
+      if(CONTATO[a.tipo]||CONTATO[b.tipo]) continue;
+      if((a.body.collisionFilterMask & b.body.collisionFilterGroup)===0) continue;
+      const dir=links.some(function(l){ return (l.pa===a&&l.pb===b)||(l.pa===b&&l.pb===a); });
+      if(dir) continue;
+      const v=new CANNON.Constraint(a.body,b.body);
+      v.collideConnected=false; v.update=function(){};
+      world.addConstraint(v); vetos.push(v);
+    }
+  });
 }
 function politicaColisao(c,kind,a,b){
   if(kind==='weld'){ unir(a,b); return; }
@@ -1461,7 +1491,7 @@ function ui(){
     const br=document.createElement('button'); br.textContent='Remover';
     br.onclick=function(){ snapshot(); ligRemove(selLink.c,selLink.kind);
       if(selLink.mk) scene.remove(selLink.mk); if(selLink.mkB) scene.remove(selLink.mkB);
-      links=links.filter(x=>x!==selLink); selLink=null; modoPivo=false; ui(); };
+      links=links.filter(x=>x!==selLink); selLink=null; modoPivo=false; recalcularVetos(); ui(); };
     bar.appendChild(br);
     document.getElementById('stat').textContent=parts.length+' pe\u00e7as \u00b7 '+links.length+' liga\u00e7\u00f5es';
     if(selLink.kind==='mola'){
@@ -1667,7 +1697,7 @@ function montarListaLigacoes(p){
       if(l.mk) scene.remove(l.mk); if(l.mkB) scene.remove(l.mkB);
       if(selLink===l) selLink=null;
       links=links.filter(function(z){ return z!==l; });
-      ui(); };
+      recalcularVetos(); ui(); };
     row.appendChild(b); row.appendChild(x); box.appendChild(row);
   });
 }
@@ -1779,7 +1809,7 @@ function montarMaoRobotica(){
     prevT=seg; tz-=c;
   });
 
-  verTudo(); sel=[]; selLink=null; paint(); ui();
+  verTudo(); sel=[]; selLink=null; recalcularVetos(); paint(); ui();
 }
 
 // preset: diferencial completo — gaiola motorizada, 2 satélites, 2 planetárias
@@ -1819,7 +1849,7 @@ function montarDiferencial(){
     p.home=p.body.position.clone(); p.hq=p.body.quaternion.clone();
     pino(GA,p);
   });
-  verTudo(); sel=[]; selLink=null; paint(); ui();
+  verTudo(); sel=[]; selLink=null; recalcularVetos(); paint(); ui();
 }
 window.B={
   diferencial:function(){ try{ montarDiferencial(); }catch(e){ shout('diferencial: '+e.message); } },
@@ -1906,7 +1936,7 @@ window.B={
     snapshot();
     links=links.filter(function(l){ if(l.a===p.id||l.b===p.id){ligRemove(l.c,l.kind); if(l.mk)scene.remove(l.mk); if(l.mkB)scene.remove(l.mkB); if(selLink===l) selLink=null; return false;} return true;});
     if(seguindo===p) seguindo=null;
-    world.removeBody(p.body); scene.remove(p.mesh); parts=parts.filter(x=>x!==p); sel=[]; paint(); ui(); },
+    world.removeBody(p.body); scene.remove(p.mesh); parts=parts.filter(x=>x!==p); sel=[]; recalcularVetos(); paint(); ui(); },
   dup:function(){ const p=sel[0]; if(!p) return;
     if(grupoDe(p).length>1){ duplicarBloco(p); return; }   // ligada -> clona o bloco (snapshot lá dentro)
     snapshot();
