@@ -155,7 +155,7 @@ vin.style.cssText='position:absolute;inset:0;pointer-events:none;'+
 stage.appendChild(vin);
 
 const world=new CANNON.World();
-world.gravity.set(0,-9.82,0); world.solver.iterations=300; world.solver.tolerance=0;  // rigidez máxima medida
+world.gravity.set(0,-9.82,0); world.solver.iterations=500; world.solver.tolerance=0;  // rigidez de solda máxima
 world.defaultContactMaterial.friction=0.6;
 const ground=new CANNON.Body({mass:0,shape:new CANNON.Plane()});
 ground.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0),-Math.PI/2);
@@ -505,6 +505,7 @@ function rebuild(p){
 function soldar(a,b){
   const V=CANNON.Vec3;
   const c=new CANNON.LockConstraint(a,b);
+  c.equations.forEach(function(e){ e.setSpookParams(1e9,4,1/240); });  // rigidez máxima estável
   const xA=a.vectorToLocalFrame(new V(1,0,0)), yA=a.vectorToLocalFrame(new V(0,1,0)), zA=a.vectorToLocalFrame(new V(0,0,1));
   const xB=b.vectorToLocalFrame(new V(1,0,0)), yB=b.vectorToLocalFrame(new V(0,1,0)), zB=b.vectorToLocalFrame(new V(0,0,1));
   c.update=function(){
@@ -1304,97 +1305,6 @@ function grupoDe(p){
   }
   return vis;
 }
-// grupo conectado exclusivamente por SOLDAS (para fusão rígida)
-function grupoSolda(p){
-  const vis=[p], fila=[p];
-  while(fila.length){
-    const cur=fila.pop();
-    links.forEach(function(l){
-      if(l.kind!=='weld') return;
-      const o=(l.pa===cur)?l.pb:(l.pb===cur)?l.pa:null;
-      if(o && vis.indexOf(o)<0){ vis.push(o); fila.push(o); }
-    });
-  }
-  return vis;
-}
-// ═══ FUSÃO RÍGIDA: no play, cada grupo de soldas vira 1 corpo proxy (elasticidade ZERO);
-// no reset volta a peças individuais editáveis ═══
-let fusoes=[];   // {proxy, membros:[{p, offLocal, quatLocal}], religadas:[{l, era_a}]}
-function fundirSoldas(){
-  desfundirSoldas();
-  const visto={};
-  parts.forEach(function(p){
-    if(visto[p.id]) return;
-    const grupo=grupoSolda(p);
-    grupo.forEach(function(q){ visto[q.id]=1; });
-    if(grupo.length<2) return;                       // peça sozinha não funde
-    const fixo=grupo.some(function(q){ return q.fixa; });
-    const c=new CANNON.Vec3(0,0,0);
-    grupo.forEach(function(q){ c.vadd(q.body.position,c); });
-    c.scale(1/grupo.length,c);
-    let massa=0; grupo.forEach(function(q){ massa+=(q.massa||1); });
-    const proxy=new CANNON.Body({mass:fixo?0:massa});
-    const membros=[];
-    grupo.forEach(function(q){
-      const off=new CANNON.Vec3(q.body.position.x-c.x,q.body.position.y-c.y,q.body.position.z-c.z);
-      q.body.shapes.forEach(function(sh,si){
-        const so=q.body.shapeOffsets[si]||new CANNON.Vec3(0,0,0);
-        const sq=q.body.shapeOrientations[si]||new CANNON.Quaternion();
-        const roff=q.body.quaternion.vmult(so);
-        proxy.addShape(sh,new CANNON.Vec3(off.x+roff.x,off.y+roff.y,off.z+roff.z),
-          q.body.quaternion.mult(sq));
-        void so;
-      });
-      membros.push({p:q, off:off.clone(), quat:q.body.quaternion.clone()});
-    });
-    proxy.position.copy(c);
-    proxy.collisionFilterGroup=4; proxy.collisionFilterMask=-1&~4;
-    if(fixo){ proxy.type=CANNON.Body.STATIC; }
-    world.addBody(proxy);
-    // membros saem do mundo enquanto fundidos
-    grupo.forEach(function(q){ world.removeBody(q.body); q._proxy=proxy; });
-    // juntas NÃO-solda com uma ponta no grupo: religa ao proxy
-    const religadas=[];
-    links.forEach(function(l){
-      if(l.kind==='weld') return;
-      const aIn=grupo.indexOf(l.pa)>=0, bIn=grupo.indexOf(l.pb)>=0;
-      if(aIn===bIn) return;                            // ambas fora ou ambas dentro
-      const corpoOrig=aIn?l.pa.body:l.pb.body;
-      // ponto de ancoragem NO MUNDO (antes de trocar o corpo) — precisa ser preservado
-      const pvW=new CANNON.Vec3(l.pivW.x,l.pivW.y,l.pivW.z);
-      const rec={l:l, aIn:aIn, origA:l.c.bodyA, origB:l.c.bodyB,
-        pivA0:l.c.pivotA?l.c.pivotA.clone():null, pivB0:l.c.pivotB?l.c.pivotB.clone():null};
-      religadas.push(rec);
-      if(aIn){ l.c.bodyA=proxy; if(l.c.pivotA) l.c.pivotA.copy(proxy.pointToLocalFrame(pvW)); }
-      else   { l.c.bodyB=proxy; if(l.c.pivotB) l.c.pivotB.copy(proxy.pointToLocalFrame(pvW)); }
-      (l.c.equations||[]).forEach(function(eq){ if(aIn) eq.bi=proxy; else eq.bj=proxy; });
-    });
-    fusoes.push({proxy:proxy, membros:membros, religadas:religadas});
-  });
-}
-function desfundirSoldas(){
-  if(!fusoes.length) return;
-  fusoes.forEach(function(f){
-    // devolve cada membro à posição derivada do proxy
-    f.membros.forEach(function(m){
-      const wp=f.proxy.pointToWorldFrame(m.off);
-      m.p.body.position.copy(wp);
-      m.p.body.quaternion.copy(f.proxy.quaternion.mult(m.quat));
-      m.p.body.velocity.set(0,0,0); m.p.body.angularVelocity.set(0,0,0);
-      m.p._proxy=null;
-      world.addBody(m.p.body);
-    });
-    // religa as juntas aos corpos reais
-    f.religadas.forEach(function(r){
-      r.l.c.bodyA=r.origA; r.l.c.bodyB=r.origB;
-      if(r.pivA0&&r.l.c.pivotA) r.l.c.pivotA.copy(r.pivA0);
-      if(r.pivB0&&r.l.c.pivotB) r.l.c.pivotB.copy(r.pivB0);
-      (r.l.c.equations||[]).forEach(function(eq){ eq.bi=r.origA; eq.bj=r.origB; });
-    });
-    world.removeBody(f.proxy);
-  });
-  fusoes=[];
-}
 // move o bloco inteiro, com as juntas junto
 function moverGrupo(g,dx,dy,dz){
   g.forEach(function(o){
@@ -1432,19 +1342,8 @@ function girarGrupo(p,qNovo){
   });
   g.forEach(function(o){ if(o!==p) return; o.hq=o.body.quaternion.clone(); });
 }
-function syncFundidos(){
-  fusoes.forEach(function(f){
-    f.membros.forEach(function(m){
-      const wp=f.proxy.pointToWorldFrame(m.off);
-      m.p.mesh.position.copy(wp);
-      const wq=f.proxy.quaternion.mult(m.quat);
-      m.p.mesh.quaternion.copy(wq);
-    });
-  });
-}
 function sync(){
-  parts.forEach(p=>{ if(p._proxy) return; p.mesh.position.copy(p.body.position); p.mesh.quaternion.copy(p.body.quaternion); });
-  if(fusoes.length) syncFundidos();
+  parts.forEach(p=>{ p.mesh.position.copy(p.body.position); p.mesh.quaternion.copy(p.body.quaternion); });
   links.forEach(function(l){ if(!l.mk) return;
     const w=l.pa.body.pointToWorldFrame(l.pivA);
     const pos=new THREE.Vector3(w.x,w.y,w.z);
@@ -2063,13 +1962,10 @@ window.B={
   maoRobotica:function(){ try{ montarMaoRobotica(); }catch(e){ shout('mão robótica: '+e.message); } },
   play:function(){ running=!running; document.getElementById('playBtn').textContent=running?'\u275a\u275a Pausar':'\u25b6 Testar';
     const p2=document.getElementById('playBtn2'); if(p2) p2.textContent=running?'\u275a\u275a':'\u25b6';
-    if(running){ parts.forEach(p=>{p.home=p.body.position.clone();p.hq=p.body.quaternion.clone();});
-      try{ fundirSoldas(); }catch(e){ shout('fusão: '+e.message); } }
-    else { try{ desfundirSoldas(); }catch(e){ shout('fusão: '+e.message); } }
+    if(running) parts.forEach(p=>{p.home=p.body.position.clone();p.hq=p.body.quaternion.clone();});
     paint(); },
   reset:function(){ running=false; document.getElementById('playBtn').textContent='\u25b6 Testar';
     const p2=document.getElementById('playBtn2'); if(p2) p2.textContent='\u25b6';
-    try{ desfundirSoldas(); }catch(e){}
     parts.forEach(p=>{p.body.position.copy(p.home);p.body.quaternion.copy(p.hq);
       p.body.velocity.set(0,0,0);p.body.angularVelocity.set(0,0,0);}); sync(); paint(); },
   clear:function(){ if(parts.length) snapshot();
@@ -2102,7 +1998,7 @@ window.B={
 };
 (function loop(){ requestAnimationFrame(loop);
   if(running){
-    for(let sp=0; sp<2; sp++){ molas.forEach(function(m){ m.applyForce(); }); world.step(1/120); }
+    for(let sp=0; sp<4; sp++){ molas.forEach(function(m){ m.applyForce(); }); world.step(1/240); }
     limitarTrilhos(); sync(); }
   if(seguindo){ orb.t.lerp(new THREE.Vector3(seguindo.body.position.x,
       seguindo.body.position.y, seguindo.body.position.z), 0.18); placeCam(); }
