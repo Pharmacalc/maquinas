@@ -191,6 +191,26 @@ function centrar(p){ if(!p) return;
   orb.t.set(p.body.position.x,p.body.position.y,p.body.position.z); placeCam(); }
 let seguindo=null;
 // centra a 2ª peça sobre a 1ª nos eixos escolhidos (não sobrepõe: alinha)
+// extremidades da peça no mundo (pontos 'ponta'/'canto'/'aro'/'borda')
+function extremidadesMundo(p){
+  const nomes={ponta:1,canto:1,aro:1,borda:1,'topo do arco':1};
+  return pontosMundo([p]).filter(function(c){ return nomes[c.n]; });
+}
+// encosta a extremidade mais próxima da 2ª peça na extremidade mais próxima da 1ª
+function encostarExtremidades(){
+  if(sel.length!==2) return;
+  const A=sel[0], B=sel[1];
+  const ea=extremidadesMundo(A), eb=extremidadesMundo(B);
+  if(!ea.length||!eb.length){ shout('esta peça não tem extremidade definida'); return; }
+  let melhor=null;
+  ea.forEach(function(a){ eb.forEach(function(b){
+    const d=a.p.distanceTo(b.p);
+    if(!melhor||d<melhor.d) melhor={d:d,a:a.p,b:b.p};
+  }); });
+  const g=grupoDe(B);
+  moverGrupo(g, melhor.a.x-melhor.b.x, melhor.a.y-melhor.b.y, melhor.a.z-melhor.b.z);
+  sync();
+}
 function centrarEm(quais){
   if(sel.length!==2) return;
   const alvoP=sel[0].body.position, movel=sel[1];
@@ -1088,6 +1108,17 @@ function pontosLocais(p){
 }
 function pontosMundo(lista){
   const out=[];
+  // ponto equidistante entre as extremidades mais próximas de DUAS peças
+  if(lista.length===2){
+    const ea=(typeof extremidadesMundo==='function')?extremidadesMundo(lista[0]):[];
+    const eb=(typeof extremidadesMundo==='function')?extremidadesMundo(lista[1]):[];
+    if(ea.length&&eb.length){
+      let m=null;
+      ea.forEach(function(a){ eb.forEach(function(b){ const d=a.p.distanceTo(b.p);
+        if(!m||d<m.d) m={d:d,a:a.p,b:b.p}; }); });
+      out.push({p:m.a.clone().add(m.b).multiplyScalar(0.5), n:'meio entre pontas', pai:null});
+    }
+  }
   lista.forEach(function(p){
     pontosLocais(p).forEach(function(o){
       const v=new CANNON.Vec3(o.v.x,o.v.y,o.v.z);
@@ -1328,9 +1359,14 @@ function fundirSoldas(){
       if(l.kind==='weld') return;
       const aIn=grupo.indexOf(l.pa)>=0, bIn=grupo.indexOf(l.pb)>=0;
       if(aIn===bIn) return;                            // ambas fora ou ambas dentro
-      const corpoReal=l.c.bodyA===(aIn?l.pa.body:l.pb.body)?'A':'B';
-      religadas.push({l:l, aIn:aIn, origA:l.c.bodyA, origB:l.c.bodyB});
-      if(aIn){ l.c.bodyA=proxy; } else { l.c.bodyB=proxy; }
+      const corpoOrig=aIn?l.pa.body:l.pb.body;
+      // ponto de ancoragem NO MUNDO (antes de trocar o corpo) — precisa ser preservado
+      const pvW=new CANNON.Vec3(l.pivW.x,l.pivW.y,l.pivW.z);
+      const rec={l:l, aIn:aIn, origA:l.c.bodyA, origB:l.c.bodyB,
+        pivA0:l.c.pivotA?l.c.pivotA.clone():null, pivB0:l.c.pivotB?l.c.pivotB.clone():null};
+      religadas.push(rec);
+      if(aIn){ l.c.bodyA=proxy; if(l.c.pivotA) l.c.pivotA.copy(proxy.pointToLocalFrame(pvW)); }
+      else   { l.c.bodyB=proxy; if(l.c.pivotB) l.c.pivotB.copy(proxy.pointToLocalFrame(pvW)); }
       (l.c.equations||[]).forEach(function(eq){ if(aIn) eq.bi=proxy; else eq.bj=proxy; });
     });
     fusoes.push({proxy:proxy, membros:membros, religadas:religadas});
@@ -1351,6 +1387,8 @@ function desfundirSoldas(){
     // religa as juntas aos corpos reais
     f.religadas.forEach(function(r){
       r.l.c.bodyA=r.origA; r.l.c.bodyB=r.origB;
+      if(r.pivA0&&r.l.c.pivotA) r.l.c.pivotA.copy(r.pivA0);
+      if(r.pivB0&&r.l.c.pivotB) r.l.c.pivotB.copy(r.pivB0);
       (r.l.c.equations||[]).forEach(function(eq){ eq.bi=r.origA; eq.bj=r.origB; });
     });
     world.removeBody(f.proxy);
@@ -1660,9 +1698,13 @@ function ui(){
       bar.appendChild(b);
     });
     const cc=document.createElement('button'); cc.textContent='⊹ alinhar centros';
-    cc.className='go'; cc.style.cssText='width:100%;margin-top:2px';
+    cc.className='go'; cc.style.cssText='width:calc(50% - 3px);margin-top:2px';
     cc.onclick=function(){ try{ snapshot(); centrarEm(['x','y','z']); }catch(e){ shout('centrar: '+e.message); } };
     bar.appendChild(cc);
+    const ce=document.createElement('button'); ce.textContent='⊢ encostar pontas';
+    ce.className='go'; ce.style.cssText='width:calc(50% - 3px);margin-top:2px';
+    ce.onclick=function(){ try{ snapshot(); encostarExtremidades(); }catch(e){ shout('encostar: '+e.message); } };
+    bar.appendChild(ce);
     const beRow=document.createElement('div');
     beRow.style.cssText='display:flex;gap:4px;width:100%;margin-top:2px;align-items:center';
     const beLab=document.createElement('span');
@@ -1805,7 +1847,7 @@ function montarNudge(){
   const t=document.createElement('div');
   t.style.cssText='font-size:11px;letter-spacing:.08em;color:#8b8d98;margin:8px 0 2px';
   t.textContent='MOVER'; box.appendChild(t);
-  const passo=0.02;
+  const passo=0.005;   // 5mm — posicionamento fino (era 2cm)
   const grid=document.createElement('div');
   grid.style.cssText='display:grid;grid-template-columns:repeat(3,40px);gap:4px';
   function bt(txt,dx,dy,dz,col){
