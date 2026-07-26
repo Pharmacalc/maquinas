@@ -242,7 +242,7 @@ function resize(){ const w=stage.clientWidth,h=stage.clientHeight; if(!w||!h) re
   cam.aspect=w/h; cam.updateProjectionMatrix(); placeCam(); }
 new ResizeObserver(resize).observe(stage);
 
-const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8,coroa:0x9a8a70,eixo:0xb8bcc6,came:0xc06a5a,difcoroa:0x7a9a6a};
+const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8,coroa:0x9a8a70,eixo:0xb8bcc6,came:0xc06a5a,difcoroa:0x7a9a6a,conica:0x9c8fb0,roldana:0x6f7686,corda:0xcfae7a};
 const CAT={
   barra:{nome:'Barra reta',p:{comp:{r:[0.02,1.2],v:0.5,u:'m'},esp:{r:[0.005,0.06],v:0.025,u:'m'}}},
   arco:{nome:'Semicirculo',p:{raio:{r:[0.04,0.6],v:0.25,u:'m'},arco:{r:[20,360],v:180,u:'\u00b0'},esp:{r:[0.005,0.05],v:0.02,u:'m'}}},
@@ -252,8 +252,54 @@ const CAT={
   coroa:{nome:'Coroa (dentes laterais)',p:{raio:{r:[0.04,0.25],v:0.09,u:'m'},dentes:{r:[6,24],v:12,u:''},esp:{r:[0.008,0.04],v:0.015,u:'m'}}},
   eixo:{nome:'Eixo cilíndrico',p:{comp:{r:[0.04,0.8],v:0.3,u:'m'},raio:{r:[0.008,0.05],v:0.018,u:'m'}}},
   came:{nome:'Came (excêntrico)',p:{raio:{r:[0.03,0.18],v:0.07,u:'m'},exc:{r:[0,0.08],v:0.03,u:'m'},esp:{r:[0.01,0.05],v:0.025,u:'m'}}},
-  difcoroa:{nome:'Coroa de diferencial',p:{raio:{r:[0.06,0.25],v:0.11,u:'m'},dentes:{r:[8,28],v:14,u:''},esp:{r:[0.01,0.04],v:0.015,u:'m'},suporte:{r:[0.03,0.12],v:0.05,u:'m'}}}
+  difcoroa:{nome:'Coroa de diferencial',p:{raio:{r:[0.06,0.25],v:0.11,u:'m'},dentes:{r:[8,28],v:14,u:''},esp:{r:[0.01,0.04],v:0.015,u:'m'},suporte:{r:[0.03,0.12],v:0.05,u:'m'}}},
+  conica:{nome:'Engrenagem c\u00f4nica',p:{raio:{r:[0.04,0.25],v:0.09,u:'m'},dentes:{r:[6,28],v:12,u:''},cone:{r:[20,70],v:45,u:'\u00b0'},face:{r:[0.015,0.10],v:0.035,u:'m'},esp:{r:[0.008,0.05],v:0.018,u:'m'}}},
+  roldana:{nome:'Roldana',p:{raio:{r:[0.03,0.20],v:0.07,u:'m'},larg:{r:[0.015,0.08],v:0.032,u:'m'}}},
+  corda:{nome:'Elo de corda',p:{comp:{r:[0.015,0.12],v:0.035,u:'m'},raio:{r:[0.004,0.02],v:0.007,u:'m'}}}
 };
+
+// ---- cunha convexa de 8 v\u00e9rtices -----------------------------------------
+// Faces QUAD, n\u00e3o trianguladas: medido no Cannon 0.6.2, hull triangulado gera
+// manifesto de 3 pontos e a pe\u00e7a afunda ~20 mm; com quads o repouso \u00e9 exato.
+// Ordem: base 0-3 (x menor), topo 4-7 (x maior), mesmo sentido em torno de X.
+// Winding do Cannon \u00e9 o inverso do THREE - da\u00ed a invers\u00e3o ao triangular a malha.
+const QFACE=[[3,2,1,0],[4,5,6,7],[1,5,4,0],[2,6,5,1],[3,7,6,2],[0,4,7,3]];
+function cunha(v){
+  const shape=new CANNON.ConvexPolyhedron(
+    v.map(function(a){ return new CANNON.Vec3(a[0],a[1],a[2]); }),QFACE);
+  const pos=[];
+  QFACE.forEach(function(f){
+    [[0,1,2],[0,2,3]].forEach(function(t){
+      t.forEach(function(j){ const q=v[f[j]]; pos.push(q[0],q[1],q[2]); });
+    });
+  });
+  const geom=new THREE.BufferGeometry();
+  geom.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  geom.computeVertexNormals();                 // n\u00e3o indexada -> normais planas
+  return {shape:shape,geom:geom};
+}
+// Dentes trapezoidais na face +X (coroa e gaiola de diferencial).
+// Espessura ANGULAR constante -> flancos em planos radiais (converge para o eixo);
+// recuo do topo (chan) -> flanco inclinado, evita travamento canto-a-canto.
+// Meia-largura W(r,s)=r*t0-s*del \u00e9 afim em (r,s), logo o flanco \u00e9 plano de verdade.
+function dentesAxiais(g,mat,shapes,R,N,e,prof,altAx,chan){
+  const t0=Math.tan(0.42*Math.PI/N), ri=R-prof, ro=R, rC=(ri+ro)/2;
+  const del=chan*ro*t0, xC=e/2+altAx/2-0.002, v=[];
+  const W=function(r,ss){ return r*t0-ss*del; };
+  [[-altAx/2,0],[altAx/2,1]].forEach(function(x){
+    v.push([x[0],ri-rC,-W(ri,x[1])],[x[0],ro-rC,-W(ro,x[1])],
+           [x[0],ro-rC, W(ro,x[1])],[x[0],ri-rC, W(ri,x[1])]);
+  });
+  const cw=cunha(v);
+  for(let i=0;i<N;i++){
+    const a=2*Math.PI*i/N;
+    const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+    const o=new CANNON.Vec3(xC,rC*Math.cos(a),rC*Math.sin(a));
+    shapes.push({s:cw.shape,o:o,q:q});
+    const dm=new THREE.Mesh(cw.geom,mat);
+    dm.position.set(o.x,o.y,o.z); dm.rotation.x=a; g.add(dm);
+  }
+}
 let parts=[],sel=[],running=false,nId=0,hingeAx=0,links=[];
 
 function build(tipo,par){
@@ -287,13 +333,17 @@ function build(tipo,par){
       shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,R*0.10,R*Math.sin(Math.PI/nSeg)*1.05)),
         o:new CANNON.Vec3(0,R*0.93*Math.cos(a),R*0.93*Math.sin(a)),q:q});
     }
+    // dente trapezoidal: base larga na raiz, topo estreito (flanco ~inclinado)
+    const chanD=(par.chanfro!==undefined)?par.chanfro:0.40;
+    const w0=larg/2, w1=w0*(1-chanD), rP=R+alt/2-0.002;
+    const cwD=cunha([[-e/2,-alt/2,-w0],[-e/2,alt/2,-w1],[-e/2,alt/2,w1],[-e/2,-alt/2,w0],
+                     [ e/2,-alt/2,-w0],[ e/2,alt/2,-w1],[ e/2,alt/2,w1],[ e/2,-alt/2,w0]]);
     for(let i=0;i<N;i++){
       const a=2*Math.PI*i/N;
       const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
-      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,alt/2,larg/2)),
-        o:new CANNON.Vec3(0,(R+alt/2-0.002)*Math.cos(a),(R+alt/2-0.002)*Math.sin(a)),q:q});
-      const dm=new THREE.Mesh(new THREE.BoxGeometry(e,alt,larg),mat);
-      dm.position.set(0,(R+alt/2-0.002)*Math.cos(a),(R+alt/2-0.002)*Math.sin(a));
+      shapes.push({s:cwD.shape,o:new CANNON.Vec3(0,rP*Math.cos(a),rP*Math.sin(a)),q:q});
+      const dm=new THREE.Mesh(cwD.geom,mat);
+      dm.position.set(0,rP*Math.cos(a),rP*Math.sin(a));
       dm.rotation.x=a; g.add(dm);
     }
     const nR=Math.round(par.raios||0);
@@ -333,16 +383,8 @@ function build(tipo,par){
     }
     shapes.push({s:new CANNON.Box(new CANNON.Vec3(e*0.75,R*0.2,R*0.2)),
       o:new CANNON.Vec3(0,0,0),q:new CANNON.Quaternion()});
-    // dentes axiais na borda da face +X
-    for(let i=0;i<N;i++){
-      const a=2*Math.PI*i/N, rD=R-prof/2-0.002;
-      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
-      shapes.push({s:new CANNON.Box(new CANNON.Vec3(altAx/2,prof/2,larg/2)),
-        o:new CANNON.Vec3(e/2+altAx/2-0.002,rD*Math.cos(a),rD*Math.sin(a)),q:q});
-      const dm=new THREE.Mesh(new THREE.BoxGeometry(altAx,prof,larg),mat);
-      dm.position.set(e/2+altAx/2-0.002,rD*Math.cos(a),rD*Math.sin(a));
-      dm.rotation.x=a; g.add(dm);
-    }
+    // dentes axiais trapezoidais na borda da face +X
+    dentesAxiais(g,mat,shapes,R,N,e,prof,altAx,(par.chanfro!==undefined)?par.chanfro:0.45);
     const disco=new THREE.Mesh(new THREE.CylinderGeometry(R,R,e,28),mat);
     disco.rotation.z=Math.PI/2; g.add(disco);
     const cubo=new THREE.Mesh(new THREE.CylinderGeometry(R*0.28,R*0.28,e*1.8,16),
@@ -360,15 +402,7 @@ function build(tipo,par){
       shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,R*0.09,R*Math.sin(Math.PI/nSeg)*1.05)),
         o:new CANNON.Vec3(0,R*0.94*Math.cos(a),R*0.94*Math.sin(a)),q:q});
     }
-    for(let i=0;i<N;i++){             // dentes laterais (face +X)
-      const a=2*Math.PI*i/N, rD=R-prof/2-0.002;
-      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
-      shapes.push({s:new CANNON.Box(new CANNON.Vec3(altAx/2,prof/2,larg/2)),
-        o:new CANNON.Vec3(e/2+altAx/2-0.002,rD*Math.cos(a),rD*Math.sin(a)),q:q});
-      const dm=new THREE.Mesh(new THREE.BoxGeometry(altAx,prof,larg),mat);
-      dm.position.set(e/2+altAx/2-0.002,rD*Math.cos(a),rD*Math.sin(a));
-      dm.rotation.x=a; g.add(dm);
-    }
+    dentesAxiais(g,mat,shapes,R,N,e,prof,altAx,(par.chanfro!==undefined)?par.chanfro:0.45);
     // travessão diametral (Y local) atravessando o centro vazado
     shapes.push({s:new CANNON.Box(new CANNON.Vec3(e*0.7,R*0.86,e*0.7)),
       o:new CANNON.Vec3(0,0,0),q:new CANNON.Quaternion()});
@@ -381,6 +415,88 @@ function build(tipo,par){
         new THREE.MeshLambertMaterial({color:0x5a6170}));
       b1.position.set(0,s*sup,0); g.add(b1);
     });
+  } else if(tipo==='conica'){
+    // Engrenagem c\u00f4nica reta: superf\u00edcie primitiva = CONE (\u00e1pice em +X sobre o eixo),
+    // dentes = cunhas trapezoidais assentadas sobre o cone, convergindo para o \u00e1pice.
+    // Par a 90\u00b0: gama_A + gama_B = 90\u00b0 (45+45 para 1:1).
+    const R=par.raio, N=Math.max(6,Math.round(par.dentes)), e=par.esp;
+    const gama=Math.max(0.35,Math.min(1.22,(par.cone||45)*Math.PI/180));
+    const tg=Math.tan(gama), nx=Math.sin(gama), ny=Math.cos(gama);
+    const ri=Math.max(R*0.30,R-par.face*Math.cos(gama));
+    const h=Math.min(0.45*(R-ri),2*Math.PI*R/N*0.48);   // altura do dente na ponta grande
+    const chan=(par.chanfro!==undefined)?par.chanfro:0.45;
+    const t0=Math.tan(0.40*Math.PI/N);
+    // corpo: aro de colis\u00e3o + cubo (o cone em si \u00e9 s\u00f3 visual)
+    const nSeg=Math.max(12,N);
+    for(let i=0;i<nSeg;i++){
+      const a=2*Math.PI*(i+0.5)/nSeg;
+      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,R*0.10,R*Math.sin(Math.PI/nSeg)*1.05)),
+        o:new CANNON.Vec3(-e/2,R*0.92*Math.cos(a),R*0.92*Math.sin(a)),q:q});
+    }
+    shapes.push({s:new CANNON.Box(new CANNON.Vec3(e*0.8,R*0.22,R*0.22)),
+      o:new CANNON.Vec3(-e/2,0,0),q:new CANNON.Quaternion()});
+    // dente: 4 cantos no plano (x,r) -> raiz A(ri),B(R); topo D(ri),C(R) deslocados
+    // pela normal do cone. z do flanco vem de um PLANO por (A,B,C); z em D \u00e9 imposto
+    // pelo plano (desvio ~1 mm em R=90 mm) para a face sair rigorosamente plana.
+    const A=[(R-ri)/tg,ri], B=[0,R];
+    const C=[B[0]+h*nx,R+h*ny], D=[A[0]+h*ri/R*nx,ri+h*ri/R*ny];
+    const zA=ri*t0, zB=R*t0, zC=R*t0*(1-chan);
+    const det=(B[0]-A[0])*(C[1]-A[1])-(C[0]-A[0])*(B[1]-A[1]);
+    const ka=((zB-zA)*(C[1]-A[1])-(zC-zA)*(B[1]-A[1]))/det;
+    const kb=((zC-zA)*(B[0]-A[0])-(zB-zA)*(C[0]-A[0]))/det;
+    const zD=zA+ka*(D[0]-A[0])+kb*(D[1]-A[1]);
+    const cx=(A[0]+B[0]+C[0]+D[0])/4, cy=(A[1]+B[1]+C[1]+D[1])/4;
+    const V=function(P,z){ return [P[0]-cx,P[1]-cy,z]; };
+    const a0=V(A,zA),b0=V(B,zB),c0=V(C,zC),d0=V(D,zD), ng=function(q){ return [q[0],q[1],-q[2]]; };
+    const cwC=cunha([ng(a0),ng(b0),b0,a0, ng(d0),ng(c0),c0,d0]);
+    for(let i=0;i<N;i++){
+      const a=2*Math.PI*i/N;
+      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+      const o=new CANNON.Vec3(cx,cy*Math.cos(a),cy*Math.sin(a));
+      shapes.push({s:cwC.shape,o:o,q:q});
+      const dm=new THREE.Mesh(cwC.geom,mat);
+      dm.position.set(o.x,o.y,o.z); dm.rotation.x=a; g.add(dm);
+    }
+    const cone=new THREE.Mesh(new THREE.CylinderGeometry(ri,R,(R-ri)/tg,30,1,true),mat);
+    cone.rotation.z=-Math.PI/2; cone.position.x=(R-ri)/(2*tg); g.add(cone);
+    const costas=new THREE.Mesh(new THREE.CylinderGeometry(R,R,e,30),mat);
+    costas.rotation.z=Math.PI/2; costas.position.x=-e/2; g.add(costas);
+    const cubo=new THREE.Mesh(new THREE.CylinderGeometry(R*0.26,R*0.26,e*2.6,16),
+      new THREE.MeshLambertMaterial({color:0x5a6170}));
+    cubo.rotation.z=Math.PI/2; g.add(cubo);
+  } else if(tipo==='roldana'){
+    // polia de garganta em V: colis\u00e3o = esfera no fundo da garganta (cilindro do
+    // Cannon afunda) + dois an\u00e9is de caixas nos flanges, que \u00e9 o que impede a
+    // corda de escapar de lado. Sem os flanges de colis\u00e3o a corda sai fora.
+    const R=par.raio, L=par.larg, rg=R*0.72;
+    shapes.push({s:new CANNON.Sphere(rg),o:new CANNON.Vec3()});
+    const nF=12;
+    [1,-1].forEach(function(sgn){
+      for(let i=0;i<nF;i++){
+        const a=2*Math.PI*(i+0.5)/nF, rF=(rg+R)/2;
+        const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(1,0,0),a);
+        shapes.push({s:new CANNON.Box(new CANNON.Vec3(L*0.11,(R-rg)/2,rF*Math.sin(Math.PI/nF)*1.05)),
+          o:new CANNON.Vec3(sgn*(L/2-L*0.11),rF*Math.cos(a),rF*Math.sin(a)),q:q});
+      }
+      const fl=new THREE.Mesh(new THREE.CylinderGeometry(R,rg,L/2,24,1,true),mat);
+      fl.rotation.z=-sgn*Math.PI/2; fl.position.x=sgn*L/4; g.add(fl);
+    });
+    const fundo=new THREE.Mesh(new THREE.CylinderGeometry(rg,rg,L*0.12,24),mat);
+    fundo.rotation.z=Math.PI/2; g.add(fundo);
+    const cubo=new THREE.Mesh(new THREE.CylinderGeometry(R*0.24,R*0.24,L*1.5,14),
+      new THREE.MeshLambertMaterial({color:0x9aa3b2}));
+    cubo.rotation.z=Math.PI/2; g.add(cubo);
+  } else if(tipo==='corda'){
+    // elo: duas esferas nas pontas (rolam sobre a roldana muito melhor que caixa)
+    const L=par.comp, r=par.raio;
+    [1,-1].forEach(function(sgn){
+      shapes.push({s:new CANNON.Sphere(r),o:new CANNON.Vec3(sgn*(L/2-r),0,0)});
+      const e=new THREE.Mesh(new THREE.SphereGeometry(r,10,8),mat);
+      e.position.x=sgn*(L/2-r); g.add(e);
+    });
+    const cil=new THREE.Mesh(new THREE.CylinderGeometry(r*0.8,r*0.8,L-2*r,10),mat);
+    cil.rotation.z=Math.PI/2; g.add(cil);
   } else if(tipo==='eixo'){
     // prisma octogonal: 4 caixas giradas — evita o afundamento do Cylinder do Cannon
     const L=par.comp, r=par.raio;
@@ -442,7 +558,7 @@ let encaixeOn=true;
 // ao soltar uma peça rotativa perto de um eixo: centra no eixo e alinha a orientação
 function tentarEncaixe(p){
   if(!encaixeOn || !p) return;
-  if(['roda','dentada','coroa','came'].indexOf(p.tipo)<0) return;
+  if(['roda','dentada','coroa','came','conica','roldana'].indexOf(p.tipo)<0) return;
   if(grupoDe(p).length>1) return;              // só peça avulsa; montada não salta
   let melhor=null;
   parts.forEach(function(e){
@@ -638,7 +754,7 @@ function instanciarModelo(dados,origem){
     const r=montarLigacao(a,b,dl.kind,pv,dir,dl.mola||dl.eng);
     ligAdd(r.c,dl.kind); politicaColisao(r.c,dl.kind,a,b);
     const mk=mkMarcador(dl.kind,false); scene.add(mk);
-    const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),new THREE.MeshBasicMaterial({color:0xd9a04a}));
+    const mkB=new THREE.Mesh(new THREE.SphereGeometry(MKE*0.010,10,8),new THREE.MeshBasicMaterial({color:0xd9a04a}));
     scene.add(mkB);
     const novo={c:r.c,kind:dl.kind,a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
       pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv.clone(),curso:dl.curso,axAz:dl.axAz,axEl:dl.axEl,
@@ -882,7 +998,7 @@ function refazer(l){
   l.c=r.c; l.pivA=r.pa; l.pivB=r.pb; l.axL=r.axL;
   aplicarMotor(l);
   l.mk=mkMarcador(l.kind,false); scene.add(l.mk);
-  l.mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
+  l.mkB=new THREE.Mesh(new THREE.SphereGeometry(MKE*0.010,10,8),
     new THREE.MeshBasicMaterial({color:0xd9a04a}));
   scene.add(l.mkB); sync(); paint();   // NUNCA ui() aqui: destruiria o slider sendo arrastado
 }
@@ -940,7 +1056,7 @@ function duplicarBloco(p){
     ligAdd(r.c,l.kind);
     politicaColisao(r.c,l.kind,A,B);
     const mk=mkMarcador(l.kind,false); scene.add(mk);
-    const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
+    const mkB=new THREE.Mesh(new THREE.SphereGeometry(MKE*0.010,10,8),
       new THREE.MeshBasicMaterial({color:0xd9a04a}));
     scene.add(mkB);
     const nl={c:r.c,kind:l.kind,a:A.id,b:B.id,pa:A,pb:B,mk:mk,mkB:mkB,
@@ -989,7 +1105,7 @@ function espelhar(eixo){
     ligAdd(r.c,l.kind);
     politicaColisao(r.c,l.kind,A,B);
     const mk=mkMarcador(l.kind,false); scene.add(mk);
-    const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
+    const mkB=new THREE.Mesh(new THREE.SphereGeometry(MKE*0.010,10,8),
       new THREE.MeshBasicMaterial({color:0xd9a04a}));
     scene.add(mkB);
     feitas.push({c:r.c,kind:l.kind,a:A.id,b:B.id,pa:A,pb:B,mk:mk,mkB:mkB,
@@ -1020,7 +1136,7 @@ function join(kind){
   politicaColisao(c,kind,a,b);
   const mk=mkMarcador(kind,false); scene.add(mk);
   // âncora do lado B: se as duas se separarem, você VÊ a junta abrindo
-  const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
+  const mkB=new THREE.Mesh(new THREE.SphereGeometry(MKE*0.010,10,8),
     new THREE.MeshBasicMaterial({color:0xd9a04a}));
   scene.add(mkB);
   links.push({c:c,kind:kind,a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
@@ -1048,20 +1164,23 @@ function eixoDaPeca(p){
   return new THREE.Vector3(v.x,v.y,v.z).normalize();
 }
 let novoAz=90, novoEl=0;   // padrão = eixo Z
+// Escala dos marcadores de junta. Discretos por padrao: eles indicam, nao dominam.
+// Mexa aqui (0.5 = metade, 1.6 = tamanho antigo) para calibrar ao seu gosto.
+const MKE=0.55;
 function mkMarcador(kind, transp){
   const g=new THREE.Group();
   const op = transp?{transparent:true,opacity:0.55}:{};
   if(kind==='ball'||kind==='weld'||kind==='mola'||kind==='engrenagem'||kind==='polia'){
-    const m=new THREE.Mesh(new THREE.SphereGeometry(kind==='ball'?0.022:0.014,16,12),
+    const m=new THREE.Mesh(new THREE.SphereGeometry(MKE*(kind==='ball'?0.022:0.016),12,10),
       new THREE.MeshBasicMaterial(Object.assign({color:COR[kind]},op)));
     g.add(m); g.userData.bola=m;
   }
   if(kind==='hinge'||kind==='pino'||kind==='trilho'){
     // LINHA = eixo da dobradiça: mostra orientação E local
-    const geo=new THREE.CylinderGeometry(0.005,0.005,0.34,10);
+    const geo=new THREE.CylinderGeometry(MKE*0.0045,MKE*0.0045,MKE*0.30,8);
     const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial(Object.assign({color:COR[kind]},op)));
     g.add(m); g.userData.haste=m;
-    const p=new THREE.Mesh(new THREE.SphereGeometry(0.016,14,10),
+    const p=new THREE.Mesh(new THREE.SphereGeometry(MKE*0.017,12,9),
       new THREE.MeshBasicMaterial(Object.assign({color:COR[kind]},op)));
     g.add(p);
   }
@@ -1097,6 +1216,14 @@ function pontosLocais(p){
     add(0,0,0,'eixo de giro'); add(0,0,q.exc,'centro do disco'); add(0,0,q.exc+q.raio,'borda');
   } else if(p.tipo==='eixo'){
     add(q.comp/2,0,0,'ponta'); add(-q.comp/2,0,0,'ponta');
+  } else if(p.tipo==='roldana'){
+    add(q.larg/2,0,0,'eixo'); add(-q.larg/2,0,0,'eixo');
+    add(0,q.raio*0.72,0,'garganta'); add(0,-q.raio*0.72,0,'garganta');
+  } else if(p.tipo==='corda'){
+    add(q.comp/2,0,0,'ponta'); add(-q.comp/2,0,0,'ponta');
+  } else if(p.tipo==='conica'){
+    add(-q.esp,0,0,'costas'); add(0,0,0,'base do cone');
+    add((q.raio-Math.max(q.raio*0.3,q.raio-q.face*Math.cos(q.cone*Math.PI/180)))/Math.tan(q.cone*Math.PI/180),0,0,'ponta');
   } else if(p.tipo==='dentada'||p.tipo==='coroa'){
     add(q.esp/2,0,0,'face'); add(-q.esp/2,0,0,'face');
   } else if(p.tipo==='arco'){
@@ -1183,7 +1310,7 @@ function verPrevia(){
   // pontos notáveis: onde a junta tende a fazer sentido
   if(imanOn) pontosMundo(sel).forEach(function(c){
     const on = imaAtivo && c.p.distanceTo(imaAtivo.p)<1e-9;
-    const d=new THREE.Mesh(new THREE.SphereGeometry(on?0.014:0.007,10,8),
+    const d=new THREE.Mesh(new THREE.SphereGeometry(MKE*(on?0.015:0.008),10,8),
       new THREE.MeshBasicMaterial({color:on?0x7ee06a:0x66707e,
         transparent:true,opacity:on?1:0.5}));
     d.position.copy(c.p); prev.add(d);
@@ -1214,7 +1341,7 @@ let vetos=[];
 function recalcularVetos(){
   vetos.forEach(function(v){ world.removeConstraint(v); });
   vetos=[];
-  const CONTATO={dentada:1,coroa:1,came:1,difcoroa:1};
+  const CONTATO={dentada:1,coroa:1,came:1,difcoroa:1,conica:1,roldana:1,corda:1};
   const visto={};
   parts.forEach(function(p){
     if(visto[p.id]) return;
@@ -1250,12 +1377,13 @@ function unir(a,b){
 }
 
 const ray=new THREE.Raycaster(), ptr=new THREE.Vector2();
+const RAIO_JUNTA=15;      // px; era 26 — quase o dobro do alvo visual
 let selLink=null;
 function pickLink(cx,cy){
-  // espaço de TELA: pega a junta mais próxima do dedo (raio 26px) —
-  // confiável mesmo com marcador minúsculo ou dentro da peça
+  // espaço de TELA: pega a junta mais próxima do dedo — confiável mesmo com o
+  // marcador dentro da peça. Raio pequeno: fora dele quem manda é a peça.
   const r=rend.domElement.getBoundingClientRect();
-  let melhor=null, melhorD=26;
+  let melhor=null, melhorD=RAIO_JUNTA;
   const v=new THREE.Vector3();
   links.forEach(function(l){
     if(!l.mk) return;
@@ -1264,7 +1392,8 @@ function pickLink(cx,cy){
     const sx=( v.x*0.5+0.5)*r.width +r.left;
     const sy=(-v.y*0.5+0.5)*r.height+r.top;
     const d=Math.hypot(cx-sx,cy-sy);
-    if(d<melhorD){ melhorD=d; melhor=l; }
+    const lim=(l===selLink)?RAIO_JUNTA*1.6:RAIO_JUNTA;
+    if(d<lim && d<melhorD){ melhorD=d; melhor=l; }
   });
   return melhor;
 }
@@ -1289,7 +1418,7 @@ function paint(){
     if(l.mk.userData.haste) l.mk.userData.haste.visible=!compacto;
     if(l.mkB) l.mkB.visible=!compacto;
     const base=compacto?0.5:1;
-    l.mk.scale.setScalar(l===selLink?base*1.35:base); });
+    l.mk.scale.setScalar(l===selLink?base*1.7:base); });
   parts.forEach(p=>{ const i=sel.indexOf(p);
     p.mesh.traverse(o=>{ if(o.material) o.material.emissive=new THREE.Color(i===0?0x2b4a70:i===1?0x6a4a20:0x000000); }); });
 }
@@ -1463,6 +1592,10 @@ const bDif=document.createElement('button'); bDif.className='acc';
 bDif.textContent='\u2699 Diferencial';
 bDif.onclick=function(){ B.diferencial(); };
 shelf.appendChild(bDif);
+const bCor=document.createElement('button'); bCor.className='acc';
+bCor.textContent='\u3030 Corda (16 elos)';
+bCor.onclick=function(){ B.corda(); };
+shelf.appendChild(bCor);
 
 function slider(box,label,min,max,step,val,fmt,onch){
   const row=document.createElement('div'); row.className='sl';
@@ -1805,7 +1938,7 @@ function montarMaoRobotica(){
     ligAdd(r.c,kind);
     politicaColisao(r.c,kind,a,b);
     const mk=mkMarcador(kind,false); scene.add(mk);
-    const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),
+    const mkB=new THREE.Mesh(new THREE.SphereGeometry(MKE*0.010,10,8),
       new THREE.MeshBasicMaterial({color:0xd9a04a}));
     scene.add(mkB);
     const l={c:r.c,kind:kind,a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
@@ -1852,6 +1985,38 @@ function montarMaoRobotica(){
   verTudo(); sel=[]; selLink=null; recalcularVetos(); paint(); ui();
 }
 
+// preset: corda de N elos com juntas esf\u00e9ricas.
+// A junta 'ball' s\u00f3 injeta a equa\u00e7\u00e3o de motor em enableMotor(), ent\u00e3o por
+// padr\u00e3o \u00e9 PointToPoint puro -> a corda fica de fato mole.
+function montarCorda(){
+  snapshot();
+  const N=16, L=0.035, r=0.007, H=0.85, x0=-N*L/2;
+  function elo(a,b,xJ){
+    const pv=new THREE.Vector3(xJ,H,0);
+    const rr=montarLigacao(a,b,'ball',pv,new THREE.Vector3(0,0,1));
+    ligAdd(rr.c,'ball'); politicaColisao(rr.c,'ball',a,b);
+    const mk=mkMarcador('ball',false); scene.add(mk);
+    const mkB=new THREE.Mesh(new THREE.SphereGeometry(MKE*0.010,10,8),
+      new THREE.MeshBasicMaterial({color:0xd9a04a}));
+    scene.add(mkB);
+    const l={c:rr.c,kind:'ball',a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
+      pivA:rr.pa,pivB:rr.pb,axL:rr.axL,pivW:pv,curso:cursoDa(a),axAz:0,axEl:0,
+      motor:{on:false,vel:0,mag:2,forca:30,ativo:false}};
+    links.push(l); return l;
+  }
+  let prev=null;
+  for(let i=0;i<N;i++){
+    const p=addPart('corda',new CANNON.Vec3(x0+L*(i+0.5),H,0));
+    p.par.comp=L; p.par.raio=r; rebuild(p);
+    p.massa=0.05; p.body.mass=0.05; p.body.updateMassProperties();
+    p.body.linearDamping=0.01; p.body.angularDamping=0.25;
+    p.home=p.body.position.clone(); p.hq=p.body.quaternion.clone();
+    if(prev) elo(prev,p,x0+L*i);
+    prev=p;
+  }
+  verTudo(); sel=[]; selLink=null; recalcularVetos(); paint(); ui();
+}
+
 // preset: diferencial completo — gaiola motorizada, 2 satélites, 2 planetárias
 // calibrado por medição: lado travado -> lado livre gira 2.12x a gaiola (ideal 2.0)
 function montarDiferencial(){
@@ -1867,7 +2032,7 @@ function montarDiferencial(){
     const r=montarLigacao(a,b,'pino',pv,new THREE.Vector3(1,0,0));
     ligAdd(r.c,'pino'); politicaColisao(r.c,'pino',a,b);
     const mk=mkMarcador('pino',false); scene.add(mk);
-    const mkB=new THREE.Mesh(new THREE.SphereGeometry(0.009,12,8),new THREE.MeshBasicMaterial({color:0xd9a04a}));
+    const mkB=new THREE.Mesh(new THREE.SphereGeometry(MKE*0.010,10,8),new THREE.MeshBasicMaterial({color:0xd9a04a}));
     scene.add(mkB);
     const l={c:r.c,kind:'pino',a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
       pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv,curso:cursoDa(a),axAz:0,axEl:0,
@@ -1893,6 +2058,7 @@ function montarDiferencial(){
 }
 window.B={
   diferencial:function(){ try{ montarDiferencial(); }catch(e){ shout('diferencial: '+e.message); } },
+  corda:function(){ try{ montarCorda(); }catch(e){ shout('corda: '+e.message); } },
   desfazer:desfazer,
   encaixe:function(){ encaixeOn=!encaixeOn;
     const b=document.getElementById('btEnc'); if(b) b.style.opacity=encaixeOn?'1':'0.35';
