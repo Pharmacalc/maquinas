@@ -52,7 +52,10 @@
 
   <div style="padding:9px 12px;border-top:1px solid #2c2d34">
     <div style="font-size:11px;letter-spacing:.08em;color:#8b8d98;margin-bottom:6px">PRATELEIRA</div>
-    <div id="shelf" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+    <div id="prateleiraTabs" style="display:flex;gap:6px;margin-bottom:8px"></div>
+    <div id="shelf-basicas" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+    <div id="shelf-prontas" style="display:none;gap:6px;flex-wrap:wrap"></div>
+    <div id="shelf-complexas" style="display:none;gap:6px;flex-wrap:wrap"></div>
   </div>
 
   <div id="modelosWrap" style="padding:9px 12px;border-top:1px solid #2c2d34;display:none">
@@ -121,6 +124,8 @@
   #app .acc{border-color:#5a6f96;background:#28334a;color:#c6d8f2}
   #app .go{border-color:#3f6a4a;background:#22301f;color:#b7e0b9}
   #app .ax{padding:5px 9px;font-size:12px}
+  #app .abaShelf{background:#2a2440;border-color:#453a66;color:#c9b8ea;font-size:12px;letter-spacing:.03em}
+  #app .abaShelf.on{background:#3a2f5c;border-color:#6a53a0;color:#ecdfff}
   #app .ax.on{background:#28334a;border-color:#5a6f96;color:#c6d8f2}
   #app .zb{width:38px;height:38px;font-size:18px;padding:0}
   #app .chip{font-size:12px;padding:3px 8px;border-radius:99px;background:#2b3550;color:#c6d8f2;border:1px solid #45557a}
@@ -257,7 +262,7 @@ function resize(){ const w=stage.clientWidth,h=stage.clientHeight; if(!w||!h) re
   cam.aspect=w/h; cam.updateProjectionMatrix(); placeCam(); }
 new ResizeObserver(resize).observe(stage);
 
-const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8,coroa:0x9a8a70,eixo:0xb8bcc6,came:0xc06a5a,difcoroa:0x7a9a6a,conica:0x9c8fb0,roldana:0x6f7686,corda:0xcfae7a};
+const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8,coroa:0x9a8a70,eixo:0xb8bcc6,came:0xc06a5a,difcoroa:0x7a9a6a,conica:0x9c8fb0,roldana:0x6f7686,corda:0xcfae7a,bracoA:0x5b7a99,cubo:0x5a9c95,manga:0xa3763f};
 const CAT={
   barra:{nome:'Barra reta',p:{comp:{r:[0.02,1.2],v:0.5,u:'m'},esp:{r:[0.005,0.06],v:0.025,u:'m'}}},
   arco:{nome:'Semicirculo',p:{raio:{r:[0.04,0.6],v:0.25,u:'m'},arco:{r:[20,360],v:180,u:'\u00b0'},esp:{r:[0.005,0.05],v:0.02,u:'m'}}},
@@ -270,7 +275,16 @@ const CAT={
   difcoroa:{nome:'Coroa de diferencial',p:{raio:{r:[0.06,0.25],v:0.11,u:'m'},dentes:{r:[8,28],v:14,u:''},esp:{r:[0.01,0.04],v:0.015,u:'m'},suporte:{r:[0.03,0.12],v:0.05,u:'m'}}},
   conica:{nome:'Engrenagem c\u00f4nica',p:{raio:{r:[0.04,0.25],v:0.09,u:'m'},dentes:{r:[6,28],v:12,u:''},cone:{r:[20,70],v:45,u:'\u00b0'},face:{r:[0.015,0.10],v:0.035,u:'m'},esp:{r:[0.008,0.05],v:0.018,u:'m'}}},
   roldana:{nome:'Roldana',p:{raio:{r:[0.03,0.20],v:0.07,u:'m'},larg:{r:[0.015,0.08],v:0.032,u:'m'}}},
-  corda:{nome:'Elo de corda',p:{comp:{r:[0.015,0.12],v:0.035,u:'m'},raio:{r:[0.004,0.02],v:0.007,u:'m'}}}
+  corda:{nome:'Elo de corda',p:{comp:{r:[0.015,0.12],v:0.035,u:'m'},raio:{r:[0.004,0.02],v:0.007,u:'m'}}},
+  bracoA:{nome:'Braço em A (susp.)',p:{base:{r:[0.04,0.5],v:0.16,u:'m'},braco:{r:[0.04,0.6],v:0.22,u:'m'},esp:{r:[0.01,0.05],v:0.022,u:'m'}}},
+  cubo:{nome:'Cubo (arestas)',p:{aresta:{r:[0.04,0.5],v:0.16,u:'m'},esp:{r:[0.008,0.04],v:0.016,u:'m'}}},
+  manga:{nome:'Cubo da roda (manga de eixo)',p:{
+    raio:{r:[0.03,0.15],v:0.07,u:'m'},
+    esp:{r:[0.008,0.03],v:0.015,u:'m'},
+    direcao:{r:[0.02,0.2],v:0.07,u:'m'},
+    direcaoY:{r:[-0.1,0.1],v:0,u:'m'},
+    direcaoX:{r:[-0.1,0.1],v:0,u:'m'}
+  }}
 };
 
 // ---- cunha convexa de 8 v\u00e9rtices -----------------------------------------
@@ -563,6 +577,69 @@ function build(tipo,par){
     const h=new THREE.Mesh(new THREE.CylinderGeometry(par.raio*0.42,par.raio*0.42,par.larg*1.05,14),
       new THREE.MeshLambertMaterial({color:0x9aa3b2}));
     h.rotation.z=Math.PI/2; g.add(h);
+  } else if(tipo==='bracoA'){
+    // Braço em A de suspensão: 2 pontos internos (buchas no chassi) convergindo pra
+    // 1 ponto externo (rótula na manga de eixo) — corpo rígido ÚNICO, zero solda.
+    // Local: pivôs internos em (0,0,±base/2), rótula externa em (braco,0,0).
+    const base=par.base, braco=par.braco, e=par.esp;
+    [-1,1].forEach(function(s){
+      const pz=s*base/2, dx=braco, dz=-pz;               // vetor do pivô até a rótula
+      const L=Math.hypot(dx,dz), a=Math.atan2(-dz,dx);    // mesma convenção do 'arco'
+      const mx=braco/2, mz=pz/2;
+      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(0,1,0),a);
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(L/2,e/2,e/2)),o:new CANNON.Vec3(mx,0,mz),q:q});
+      const m=new THREE.Mesh(new THREE.BoxGeometry(L,e,e),mat);
+      m.position.set(mx,0,mz); m.rotation.y=a; g.add(m);
+      // bucha (só estética — ajuda a enxergar onde a junta com o chassi deve entrar)
+      const bch=new THREE.Mesh(new THREE.CylinderGeometry(e*0.55,e*0.55,e*1.3,12),
+        new THREE.MeshLambertMaterial({color:0x5a6170}));
+      bch.rotation.x=Math.PI/2; bch.position.set(0,0,pz); g.add(bch);
+    });
+    const rot=new THREE.Mesh(new THREE.SphereGeometry(e*0.65,12,10),
+      new THREE.MeshLambertMaterial({color:0x5a6170}));
+    rot.position.set(braco,0,0); g.add(rot);
+  } else if(tipo==='cubo'){
+    // Cubo em arestas: mesmo material do braço em A — 12 barras compostas num corpo
+    // rígido só, sem solda nenhuma. h = meia-aresta; cada barra é axis-aligned,
+    // então nem precisa de quaternion (ao contrário do braço em A, que converge).
+    const L=par.aresta, e=par.esp, h=L/2;
+    [-1,1].forEach(function(s1){ [-1,1].forEach(function(s2){
+      // aresta ao longo de X, nas 4 combinações de (y,z)
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(h,e/2,e/2)),o:new CANNON.Vec3(0,s1*h,s2*h)});
+      let m=new THREE.Mesh(new THREE.BoxGeometry(L,e,e),mat); m.position.set(0,s1*h,s2*h); g.add(m);
+      // aresta ao longo de Y, nas 4 combinações de (x,z)
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,h,e/2)),o:new CANNON.Vec3(s1*h,0,s2*h)});
+      m=new THREE.Mesh(new THREE.BoxGeometry(e,L,e),mat); m.position.set(s1*h,0,s2*h); g.add(m);
+      // aresta ao longo de Z, nas 4 combinações de (x,y)
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,e/2,h)),o:new CANNON.Vec3(s1*h,s2*h,0)});
+      m=new THREE.Mesh(new THREE.BoxGeometry(e,e,L),mat); m.position.set(s1*h,s2*h,0); g.add(m);
+    }); });
+    // vértices (só estética — ajuda a enxergar os 8 cantos onde ligar outras peças)
+    [-1,1].forEach(function(sx){ [-1,1].forEach(function(sy){ [-1,1].forEach(function(sz){
+      const v=new THREE.Mesh(new THREE.SphereGeometry(e*0.6,10,8),
+        new THREE.MeshLambertMaterial({color:0x5a6170}));
+      v.position.set(sx*h,sy*h,sz*h); g.add(v);
+    }); }); });
+  } else if(tipo==='manga'){
+    // Cubo da roda como CHAPA REDONDA — cancelamos a placa triangular (deu erro de
+    // normal invertida no Cannon mesmo depois de 2 reconstruções). Solução mais
+    // simples e mais segura: reaproveitar EXATAMENTE o mesmo truque já usado em
+    // 'roda' — colisão por ESFERA (o Cylinder do Cannon nesta versão afunda ~80mm,
+    // conforme o comentário original ali embaixo), visual por cilindro achatado.
+    // Sem ConvexPolyhedron nenhum aqui — zero risco do mesmo tipo de erro.
+    const raio=par.raio, e=par.esp, direcao=par.direcao, direcaoY=par.direcaoY||0, direcaoX=par.direcaoX||0;
+    shapes.push({s:new CANNON.Sphere(raio),o:new CANNON.Vec3()});
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(raio,raio,e,24),mat);
+    m.rotation.z=Math.PI/2; g.add(m);
+    // 3 bolinhas: superior/inferior na borda do disco (acompanham raio); a
+    // posterior tem posição PRÓPRIA em 3 eixos — direcao (distância no plano),
+    // direcaoY (altura no plano) e direcaoX (sai do plano do disco) — mexer nela
+    // não distorce o disco, só desloca a bolinha.
+    [[0,raio,0],[0,-raio,0],[direcaoX,direcaoY,direcao]].forEach(function(p){
+      const v=new THREE.Mesh(new THREE.SphereGeometry(e*0.9,10,8),
+        new THREE.MeshLambertMaterial({color:0x5a6170}));
+      v.position.set(p[0],p[1],p[2]); g.add(v);
+    });
   }
   return {shapes,mesh:g};
 }
@@ -734,6 +811,9 @@ function cursoDa(p){
   if(p.tipo==='eixo') return p.par.comp;
   if(p.tipo==='placa') return Math.max(p.par.larg,p.par.prof);
   if(p.tipo==='arco') return p.par.raio*2;
+  if(p.tipo==='bracoA') return p.par.braco*2;
+  if(p.tipo==='cubo') return p.par.aresta;
+  if(p.tipo==='manga') return p.par.raio*2;
   return 0.3;
 }
 
@@ -1226,7 +1306,47 @@ function mkMarcador(kind, transp){
       new THREE.MeshBasicMaterial(Object.assign({color:COR[kind]},op)));
     g.add(p);
   }
+  if(kind==='mola'){
+    // referencial visual da mola: linha em espiral entre as duas peças, redesenhada
+    // a cada quadro (sync()) conforme ela estica/comprime de verdade. Buffer de
+    // tamanho FIXO (NPTS_BOBINA pontos) pra só sobrescrever valores a cada quadro,
+    // em vez de recriar a geometria inteira (mais leve).
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(new Float32Array(NPTS_BOBINA*3),3));
+    const linha=new THREE.Line(geo,new THREE.LineBasicMaterial(Object.assign({color:COR.mola},op)));
+    linha.frustumCulled=false; // pontas mudam de posição toda hora; evita sumir por corte de frustum desatualizado
+    g.add(linha); g.userData.bobina=linha;
+  }
   return g;
+}
+const NPTS_BOBINA=19, VOLTAS_BOBINA=6, NSEG_BOBINA=16;
+// Recalcula os pontos da espiral entre A e B e escreve direto no buffer da linha
+// (sem alocar array novo) — chamado do sync() a cada quadro pra toda junta 'mola'.
+function atualizarBobina(linha,A,B,raio){
+  const d=new THREE.Vector3().subVectors(B,A);
+  const L=d.length();
+  const arr=linha.geometry.attributes.position.array;
+  let idx=0;
+  function push(v){ arr[idx++]=v.x; arr[idx++]=v.y; arr[idx++]=v.z; }
+  if(L<1e-6){ for(let i=0;i<NPTS_BOBINA;i++) push(A); linha.geometry.attributes.position.needsUpdate=true; return; }
+  const dir=d.clone().multiplyScalar(1/L);
+  const ref=Math.abs(dir.x)<0.9?new THREE.Vector3(1,0,0):new THREE.Vector3(0,1,0);
+  const u=new THREE.Vector3().crossVectors(dir,ref).normalize();
+  const v=new THREE.Vector3().crossVectors(dir,u).normalize();
+  const chumbo=Math.min(L*0.12,0.02); // trechinho reto nas pontas, como o símbolo de mola de verdade
+  const ini=chumbo, fim=L-chumbo;
+  push(A);
+  push(A.clone().add(dir.clone().multiplyScalar(ini)));
+  for(let i=1;i<NSEG_BOBINA;i++){
+    const t=i/NSEG_BOBINA;
+    const ao=ini+t*(fim-ini);
+    const ang=t*VOLTAS_BOBINA*2*Math.PI;
+    const off=u.clone().multiplyScalar(Math.cos(ang)*raio).add(v.clone().multiplyScalar(Math.sin(ang)*raio));
+    push(A.clone().add(dir.clone().multiplyScalar(ao)).add(off));
+  }
+  push(A.clone().add(dir.clone().multiplyScalar(fim)));
+  push(B);
+  linha.geometry.attributes.position.needsUpdate=true;
 }
 function porMarcador(g, kind, pos, axis){
   g.position.copy(pos);
@@ -1273,6 +1393,16 @@ function pontosLocais(p){
     [-1,1].forEach(s=>add(q.raio*Math.sin(s*tot/2),0,q.raio*Math.cos(s*tot/2),'ponta'));
     add(0,0,0,'centro do círculo');
     add(0,0,q.raio,'topo do arco');
+  } else if(p.tipo==='bracoA'){
+    add(0,0,-q.base/2,'pivô interno'); add(0,0,q.base/2,'pivô interno');
+    add(q.braco,0,0,'ponta');
+  } else if(p.tipo==='cubo'){
+    const h=q.aresta/2;
+    [-1,1].forEach(sx=>[-1,1].forEach(sy=>[-1,1].forEach(sz=>add(sx*h,sy*h,sz*h,'vértice'))));
+  } else if(p.tipo==='manga'){
+    add(0,q.raio,0,'rótula superior');
+    add(0,-q.raio,0,'rótula inferior');
+    add(q.direcaoX||0,q.direcaoY||0,q.direcao,'engate direção');
   }
   return L;
 }
@@ -1526,7 +1656,14 @@ function sync(){
       ax=new THREE.Vector3(a.x,a.y,a.z); }
     porMarcador(l.mk,l.kind,pos,ax||new THREE.Vector3(0,1,0));
     if(l.mkB){ const wb=l.pb.body.pointToWorldFrame(l.pivB);
-      l.mkB.position.set(wb.x,wb.y,wb.z); } });
+      l.mkB.position.set(wb.x,wb.y,wb.z);
+      if(l.kind==='mola'&&l.mk.userData.bobina){
+        // a linha é FILHA de l.mk, que porMarcador já posicionou em 'pos' — os
+        // pontos da bobina precisam ser relativos a isso (senão soma a posição 2x)
+        const bLocal=new THREE.Vector3(wb.x-pos.x, wb.y-pos.y, wb.z-pos.z);
+        atualizarBobina(l.mk.userData.bobina,new THREE.Vector3(0,0,0),bLocal,0.012);
+      }
+    } });
 }
 
 let modoPivo=false;
@@ -1626,21 +1763,45 @@ window.addEventListener('mousemove',move); stage.addEventListener('touchmove',mo
 window.addEventListener('mouseup',up); stage.addEventListener('touchend',up);
 stage.addEventListener('wheel',function(e){e.preventDefault();orb.d=Math.max(0.3,Math.min(14,orb.d*(e.deltaY>0?1.1:0.9)));placeCam();},{passive:false});
 
-const shelf=document.getElementById('shelf');
+// Categorização das peças/presets nas 3 abas da prateleira. Peças novas no CAT que
+// não aparecerem aqui caem em 'complexas' por padrão (fallback abaixo), pra nunca
+// sumir silenciosamente do catálogo se alguém esquecer de categorizar.
+const CATEGORIA_PECA={barra:'basicas',placa:'basicas',roda:'basicas',eixo:'basicas',arco:'basicas'};
+const ABAS=[['basicas','Básicas'],['prontas','Prontas'],['complexas','Complexas']];
+const shelves={basicas:document.getElementById('shelf-basicas'),
+  prontas:document.getElementById('shelf-prontas'),
+  complexas:document.getElementById('shelf-complexas')};
+let abaPrateleira='basicas';
+function mostrarAbaPrateleira(aba){
+  abaPrateleira=aba;
+  ABAS.forEach(function(a){ shelves[a[0]].style.display=(a[0]===aba)?'flex':'none'; });
+  document.querySelectorAll('#prateleiraTabs button').forEach(function(b){
+    b.className='abaShelf'+(b.dataset.aba===aba?' on':'');
+  });
+}
+const tabs=document.getElementById('prateleiraTabs');
+ABAS.forEach(function(a){
+  const b=document.createElement('button'); b.textContent=a[1]; b.dataset.aba=a[0];
+  b.onclick=function(){ mostrarAbaPrateleira(a[0]); };
+  tabs.appendChild(b);
+});
+mostrarAbaPrateleira('basicas');
+
 Object.keys(CAT).forEach(function(k){ const b=document.createElement('button');
-  b.textContent=CAT[k].nome; b.onclick=function(){ snapshot(); addPart(k); }; shelf.appendChild(b); });
+  b.textContent=CAT[k].nome; b.onclick=function(){ snapshot(); addPart(k); };
+  shelves[CATEGORIA_PECA[k]||'complexas'].appendChild(b); });
 const bMao=document.createElement('button'); bMao.className='acc';
 bMao.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 6c-3.2 0-5.5 2.2-5.5 5.2V15"/><path d="M12 6c3.2 0 5.5 2.2 5.5 5.2V15"/><path d="M6.5 13.5 5 17M17.5 13.5 19 17"/></svg>M\u00e3o rob\u00f3tica';
 bMao.onclick=function(){ B.maoRobotica(); };
-shelf.appendChild(bMao);
+shelves.prontas.appendChild(bMao);
 const bDif=document.createElement('button'); bDif.className='acc';
 bDif.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5.5"/><path d="M12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1M18.5 18.5l-2.1-2.1M7.6 7.6 5.5 5.5"/></svg>Diferencial';
 bDif.onclick=function(){ B.diferencial(); };
-shelf.appendChild(bDif);
+shelves.prontas.appendChild(bDif);
 const bCor=document.createElement('button'); bCor.className='acc';
 bCor.textContent='\u3030 Corda (16 elos)';
 bCor.onclick=function(){ B.corda(); };
-shelf.appendChild(bCor);
+shelves.prontas.appendChild(bCor);
 
 function slider(box,label,min,max,step,val,fmt,onch){
   const row=document.createElement('div'); row.className='sl';
@@ -1676,7 +1837,7 @@ function ui(){
     bp.className=modoPivo?'acc':'';
     bp.onclick=function(){ modoPivo=!modoPivo; ui(); }; bar.appendChild(bp);
     [['weld','Solda'],['ball','Esférica'],['hinge','Dobradiça'],['pino','Pino'],
-     ['trilho','Trilho'],['mola','Mola'],['engrenagem','Engren.'],['polia','Polia']].forEach(function(x){
+     ['trilho','Trilho'],['mola','Mola']].forEach(function(x){
       const b=document.createElement('button');
       b.className=selLink.kind===x[0]?'acc':''; b.textContent=x[1];
       b.onclick=function(){ snapshot(); selLink.kind=x[0]; refazer(selLink); ui(); }; bar.appendChild(b);
@@ -1788,7 +1949,7 @@ function ui(){
     c.textContent=CAT[sel[0].tipo].nome+' #'+sel[0].id+' + '+CAT[sel[1].tipo].nome+' #'+sel[1].id;
     bar.appendChild(c);
     [['weld','Soldar'],['ball','Esférica'],['hinge','Dobradiça'],['pino','Pino'],
-     ['trilho','Trilho'],['mola','Mola'],['engrenagem','Engrenagem'],['polia','Polia']].forEach(function(x){
+     ['trilho','Trilho'],['mola','Mola']].forEach(function(x){
       const b=document.createElement('button'); b.className='acc'; b.textContent=x[1];
       b.onclick=function(){ try{ join(x[0]); }catch(e){ shout('ligar: '+e.message); } };
       bar.appendChild(b);
