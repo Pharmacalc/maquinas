@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#16171b">
+<meta name="description" content="Sandbox de montagem de máquinas: encaixe peças, articule juntas e teste física em tempo real, direto no navegador.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bancada">
 <title>Bancada de Mecânica</title>
 <style>
   html,body{margin:0;padding:0;background:#101114;height:100%;overflow:hidden;}
@@ -18,13 +25,13 @@
     <div style="position:absolute;right:8px;bottom:8px;display:flex;flex-direction:column;gap:6px;z-index:5">
       <button class="zb" onclick="B.zoom(0.8)">+</button>
       <button class="zb" onclick="B.zoom(1.25)">−</button>
-      <button class="zb" onclick="B.verTudo()" title="ver tudo">⤢</button>
-      <button class="zb" id="btSeguir" onclick="B.seguir()" title="centrar / seguir">⊙</button>
+      <button class="zb" onclick="B.verTudo()" title="ver tudo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+      <button class="zb" id="btSeguir" onclick="B.seguir()" title="centrar / seguir"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.2"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg></button>
       <button class="zb" onclick="B.vista('t')" title="vista de topo" style="font-size:12px">TOPO</button>
       <button class="zb" onclick="B.vista('f')" title="vista frontal" style="font-size:12px">FREN</button>
       <button class="zb" onclick="B.vista('l')" title="vista lateral" style="font-size:12px">LADO</button>
-      <button class="zb" id="btGrav" onclick="B.gravidade()" title="gravidade liga/desliga" style="font-size:14px">🌍</button>
-      <button class="zb" id="btEnc" onclick="B.encaixe()" title="encaixe assistido no eixo" style="font-size:14px">🧲</button>
+      <button class="zb" id="btGrav" onclick="B.gravidade()" title="gravidade liga/desliga"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a13 13 0 0 1 3.5 9A13 13 0 0 1 12 21a13 13 0 0 1-3.5-9A13 13 0 0 1 12 3z"/></svg></button>
+      <button class="zb" id="btEnc" onclick="B.encaixe()" title="encaixe assistido no eixo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v9a5 5 0 0 0 10 0V3"/><path d="M4 3h6M14 3h6"/></svg></button>
     </div>
   </div>
 
@@ -33,7 +40,8 @@
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
       <span style="font-size:11px;letter-spacing:.08em;color:#8ba888">MOTORES</span>
       <button class="go" id="playBtn2" onclick="B.play()" style="padding:4px 10px;font-size:12px">▶</button>
-      <button onclick="B.reset()" style="padding:4px 10px;font-size:12px">↺</button>
+      <button onclick="B.reset()" style="padding:4px 10px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 9 6 9"/><path d="M3.4 14a9 9 0 1 0 2-9.5L1 9"/></svg></button>
+      <button id="btAgrupar" onclick="B.agruparJuntas()" style="margin-left:auto;font-size:11px">Agrupar juntas</button>
     </div>
     <div id="motores"></div>
   </div>
@@ -58,12 +66,16 @@
     <div style="font-size:11px;letter-spacing:.08em;color:#8b8d98;margin:8px 0 2px">GIRO</div>
     <div id="rots"></div>
     <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+      <span id="acoesPeca" style="display:contents">
       <button onclick="B.centrar()">Centrar</button>
       <button id="btDup" onclick="B.dup()">Duplicar</button>
+      </span>
       <button onclick="B.del()">Remover</button>
       <button onclick="B.desel()">Soltar</button>
-      <button id="btGravar" onclick="B.toggleGravar()">💾 Gravar</button>
-      <button id="btFixar" onclick="B.fixar()">📌 Fixar</button>
+      <span id="acoesPeca2" style="display:contents">
+      <button id="btGravar" onclick="B.toggleGravar()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21 12 16.5 6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/></svg>Gravar</button>
+      <button id="btFixar" onclick="B.fixar()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.6"/><line x1="12" y1="21" x2="12" y2="8"/><path d="M6 11H3a9 9 0 0 0 18 0h-3"/></svg>Fixar</button>
+      </span>
     </div>
     <div id="gravarForm" style="display:none;margin-top:8px;gap:6px">
       <input id="gravarNome" type="text" placeholder="nome da peça" style="flex:1;min-width:0;background:#1e1f26;color:#e8e8ea;border:1px solid #383941;border-radius:7px;padding:7px 9px;font-size:13px">
@@ -73,16 +85,17 @@
 
   <div style="padding:9px 12px;border-top:1px solid #2c2d34;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
     <button class="go" id="playBtn" onclick="B.play()">▶ Testar</button>
-    <button id="btDesfazer" onclick="B.desfazer()" style="opacity:0.4" disabled>↶ Desfazer</button>
-    <button onclick="B.compartilhar()" title="compartilhar por link (máquinas pequenas)">🔗</button>
-    <button onclick="B.exportar()" title="salvar arquivo .json">💾</button>
-    <button onclick="B.importar()" title="abrir arquivo .json">📂</button>
+    <button id="btDesfazer" onclick="B.desfazer()" style="opacity:0.4" disabled><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-6a4 4 0 0 0-4-4H4"/></svg>Desfazer</button>
+    <button onclick="B.compartilhar()" title="compartilhar por link (máquinas pequenas)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><line x1="8.4" y1="13.4" x2="15.6" y2="17.4"/><line x1="15.6" y1="6.6" x2="8.4" y2="10.4"/></svg></button>
+    <button id="btInstalar" onclick="B.instalarApp()" style="display:none"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Instalar app</button>
+    <button onclick="B.exportar()" title="salvar arquivo .json"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+    <button onclick="B.importar()" title="abrir arquivo .json"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>
     <button onclick="B.reset()">Reiniciar</button>
     <button onclick="B.clear()">Limpar</button>
     <span id="stat" style="margin-left:auto;font-size:12px;color:#8b8d98"></span>
   </div>
   <div style="padding:0 12px 10px;font-size:12px;color:#8b8d98;line-height:1.5">
-    Um dedo na peça arrasta · no vazio orbita · <b>dois dedos = zoom + deslocar</b> · ⤢ enquadra tudo.
+    Um dedo na peça arrasta · no vazio orbita · <b>dois dedos = zoom + deslocar</b> · o botão de expandir no canto enquadra tudo.
     <b>Trilho</b>: a 2ª peça corre ao longo da 1ª (a haste é o trilho). No painel verde,
     <b>segure ◀ ou ▶</b> para mover — solta, para. A barrinha ao lado regula a velocidade.
     Os <b>pontos cinza</b> são lugares notáveis (centro, pontas, cantos, eixo). O <b>ímã</b> puxa o
@@ -90,7 +103,7 @@
     fica onde você deixou. <b>Pino</b> = a 2ª peça gira no eixo dela mesma (roda). O eixo de qualquer junta pode apontar
     para <b>qualquer direção</b>: presets X/Y/Z, <b>↗ peça</b> para seguir o eixo de uma peça, ou os
     sliders de azimute/elevação.
-    Toque numa junta e use <b>⚙ motorizar</b>.
+    Toque numa junta e use <b>motorizar</b>.
     Com duas peças selecionadas: <b>arraste a bola roxa</b>, ou ligue <b>⌖ tocar p/ posicionar</b> e
     toque no ponto exato onde a dobra deve ficar. <b>Toque numa junta já criada</b> para reposicioná-la,
     trocar o eixo, o tipo, ou removê-la. Toque em <b>duas</b> peças e os botões de ligação aparecem na barra logo abaixo da cena.
@@ -100,6 +113,8 @@
 
 <style>
   #app button{background:linear-gradient(180deg,#2a2b33,#232429);color:#d8d9e0;border:1px solid #3b3c46;border-radius:8px;padding:7px 11px;font-size:13px;cursor:pointer;font-family:inherit;transition:filter .12s, transform .06s}
+  #app button svg{vertical-align:-3px;flex-shrink:0}
+  #app button svg+*, #app button *+svg{margin-left:5px}
   #app button:active{filter:brightness(1.25);transform:translateY(1px)}
   #app input[type=range]{accent-color:#6fd6c8}
   #app button:active{background:#31323a}
@@ -301,6 +316,16 @@ function dentesAxiais(g,mat,shapes,R,N,e,prof,altAx,chan){
   }
 }
 let parts=[],sel=[],running=false,nId=0,hingeAx=0,links=[];
+// Ícones dos botões cujo texto muda em runtime (Gravar/Fixar) — precisam ficar em
+// innerHTML, não textContent, senão a troca de texto apaga o ícone junto.
+const ICO_GRAVAR='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21 12 16.5 6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/></svg>';
+const ICO_FIXAR='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.6"/><line x1="12" y1="21" x2="12" y2="8"/><path d="M6 11H3a9 9 0 0 0 18 0h-3"/></svg>';
+const ICO_ENCAIXE='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v9a5 5 0 0 0 10 0V3"/><path d="M4 3h6M14 3h6"/></svg>';
+const ICO_RESET='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 9 6 9"/><path d="M3.4 14a9 9 0 1 0 2-9.5L1 9"/></svg>';
+const ICO_MOTOR='<svg viewBox="0 0 24 24" width="13" height="13" style="vertical-align:-2px" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5.5"/><path d="M12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1M18.5 18.5l-2.1-2.1M7.6 7.6 5.5 5.5"/></svg>';
+const ICO_CHEVRON='<svg viewBox="0 0 24 24" width="13" height="13" style="vertical-align:-2px;transition:transform .12s" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>';
+let gruposFechados=new Set(); // nomes de grupo de motores recolhidos — sobrevive a re-renders da sessão
+let modoAgrupar=false, selecaoAgrupar=new Set(); // modo "Agrupar juntas": escolher várias de uma vez
 
 function build(tipo,par){
   const g=new THREE.Group(), shapes=[];
@@ -713,27 +738,43 @@ function cursoDa(p){
 }
 
 // ═══ serializar / reconstruir: base comum de DESFAZER e GRAVAR PEÇA ═══
-function serializar(pecas,referencia){
+function serializar(pecas,referencia,usarHome){
   const ids=pecas.map(function(p){return p.id;});
   return {
-    partes:pecas.map(function(o){ return {
+    partes:pecas.map(function(o){
+      const pos=usarHome?o.home:o.body.position;
+      const quat=usarHome?o.hq:o.body.quaternion;
+      return {
       id:o.id, tipo:o.tipo, par:JSON.parse(JSON.stringify(o.par)), rot:Object.assign({},o.rot),
       massa:o.massa||1, fixa:!!o.fixa,
-      pos:{x:o.body.position.x-referencia.x,y:o.body.position.y-referencia.y,z:o.body.position.z-referencia.z},
-      quat:{x:o.body.quaternion.x,y:o.body.quaternion.y,z:o.body.quaternion.z,w:o.body.quaternion.w}
+      pos:{x:pos.x-referencia.x,y:pos.y-referencia.y,z:pos.z-referencia.z},
+      quat:{x:quat.x,y:quat.y,z:quat.z,w:quat.w}
     };}),
     ligs:links.filter(function(l){ return ids.indexOf(l.a)>=0 && ids.indexOf(l.b)>=0; })
-      .map(function(l){ return {
+      .map(function(l){
+        // pivW gravado na criação da junta fica PARADO ali; a peça, não — se o app for
+        // fechado com a física em andamento (sem apertar "Reiniciar"), a peça já se moveu
+        // mas o pivô salvo continuaria na posição antiga, descolando junta de estrutura ao
+        // recarregar. Corrige recalculando o pivô ao vivo a partir do corpo (pivA é um
+        // deslocamento local fixo, então pointToWorldFrame sempre reflete a posição atual).
+        // usarHome=true (auto-save): calcula o pivô como se o corpo estivesse em home/hq,
+        // sem tocar a cena ao vivo — é assim que "fechar sem Reiniciar" reabre na posição
+        // original mesmo com o teste rodando em segundo plano.
+        const pivAgora=usarHome
+          ? l.pa.hq.vmult(l.pivA).vadd(l.pa.home)
+          : l.pa.body.pointToWorldFrame(l.pivA);
+        return {
         kind:l.kind, a:l.a, b:l.b,
-        pivW:{x:l.pivW.x-referencia.x,y:l.pivW.y-referencia.y,z:l.pivW.z-referencia.z},
+        pivW:{x:pivAgora.x-referencia.x,y:pivAgora.y-referencia.y,z:pivAgora.z-referencia.z},
         axAz:l.axAz, axEl:l.axEl, curso:l.curso,
+        grupo:l.grupo, subgrupo:l.subgrupo,
         mola:l.mola?Object.assign({},l.mola):undefined,
         eng:l.eng?Object.assign({},l.eng):undefined,
         motor:Object.assign({},l.motor,{ativo:false,vel:0})
       };})
   };
 }
-function serializarTudo(){ return serializar(parts,{x:0,y:0,z:0}); }
+function serializarTudo(usarHome){ return serializar(parts,{x:0,y:0,z:0},usarHome); }
 function serializarBloco(p){ return serializar(grupoDe(p),p.body.position); }
 function instanciarModelo(dados,origem){
   const mapa={};
@@ -758,6 +799,7 @@ function instanciarModelo(dados,origem){
     scene.add(mkB);
     const novo={c:r.c,kind:dl.kind,a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
       pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv.clone(),curso:dl.curso,axAz:dl.axAz,axEl:dl.axEl,
+      grupo:dl.grupo,subgrupo:dl.subgrupo,
       mola:dl.mola?Object.assign({},dl.mola):undefined,
       eng:dl.eng?Object.assign({},dl.eng):undefined,
       motor:Object.assign({on:false,vel:0,mag:3,forca:30,ativo:false},dl.motor,{ativo:false,vel:0})};
@@ -779,7 +821,7 @@ let _ultimaCena='';
 function salvarCena(){
   if(!TEM_STORAGE) return;
   try{
-    const json=JSON.stringify(serializarTudo());
+    const json=JSON.stringify(serializarTudo(true)); // true = posição original, não a de teste
     if(json===_ultimaCena) return;
     localStorage.setItem('bancada:cena',json);
     _ultimaCena=json;
@@ -1475,6 +1517,9 @@ function sync(){
   parts.forEach(p=>{ p.mesh.position.copy(p.body.position); p.mesh.quaternion.copy(p.body.quaternion); });
   links.forEach(function(l){ if(!l.mk) return;
     const w=l.pa.body.pointToWorldFrame(l.pivA);
+    // mantém pivW sempre ao vivo (também fora da física — reset() chama sync() já com
+    // running=false, e mesmo assim a junta precisa acompanhar a peça de volta à origem)
+    l.pivW.set(w.x,w.y,w.z);
     const pos=new THREE.Vector3(w.x,w.y,w.z);
     let ax=null;
     if((l.kind==='hinge'||l.kind==='pino'||l.kind==='trilho')&&l.axL){ const a=l.pa.body.quaternion.vmult(l.axL);
@@ -1585,11 +1630,11 @@ const shelf=document.getElementById('shelf');
 Object.keys(CAT).forEach(function(k){ const b=document.createElement('button');
   b.textContent=CAT[k].nome; b.onclick=function(){ snapshot(); addPart(k); }; shelf.appendChild(b); });
 const bMao=document.createElement('button'); bMao.className='acc';
-bMao.textContent='\ud83e\udd1a M\u00e3o rob\u00f3tica';
+bMao.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 6c-3.2 0-5.5 2.2-5.5 5.2V15"/><path d="M12 6c3.2 0 5.5 2.2 5.5 5.2V15"/><path d="M6.5 13.5 5 17M17.5 13.5 19 17"/></svg>M\u00e3o rob\u00f3tica';
 bMao.onclick=function(){ B.maoRobotica(); };
 shelf.appendChild(bMao);
 const bDif=document.createElement('button'); bDif.className='acc';
-bDif.textContent='\u2699 Diferencial';
+bDif.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5.5"/><path d="M12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1M18.5 18.5l-2.1-2.1M7.6 7.6 5.5 5.5"/></svg>Diferencial';
 bDif.onclick=function(){ B.diferencial(); };
 shelf.appendChild(bDif);
 const bCor=document.createElement('button'); bCor.className='acc';
@@ -1616,7 +1661,10 @@ function slider(box,label,min,max,step,val,fmt,onch){
 function ui(){
   const bar=document.getElementById('bar'); bar.innerHTML='';
   const one=sel.length===1?sel[0]:null;
-  document.getElementById('editor').style.display=one?'block':'none';
+  document.getElementById('editor').style.display=(one||selLink)?'block':'none';
+  const apc=document.getElementById('acoesPeca'), apc2=document.getElementById('acoesPeca2');
+  if(apc) apc.style.display=one?'contents':'none';
+  if(apc2) apc2.style.display=one?'contents':'none';
 
   if(selLink){
     const NOME={weld:'SOLDA',ball:'ESFÉRICA',hinge:'DOBRADIÇA',pino:'PINO',trilho:'TRILHO',mola:'MOLA',engrenagem:'ENGRENAGEM',polia:'POLIA'};
@@ -1649,17 +1697,33 @@ function ui(){
     }
     if(selLink.kind==='hinge'||selLink.kind==='pino'||selLink.kind==='trilho'||selLink.kind==='ball'){
       const bm=document.createElement('button');
-      bm.className=selLink.motor.on?'go':''; bm.textContent=selLink.motor.on?'⚙ motor ligado':'⚙ motorizar';
+      bm.className=selLink.motor.on?'go':''; bm.innerHTML=ICO_MOTOR+(selLink.motor.on?'motor ligado':'motorizar');
       bm.onclick=function(){ selLink.motor.on=!selLink.motor.on; aplicarMotor(selLink); paint(); ui(); verMotores(); };
       bar.appendChild(bm);
+      const gWrap=document.createElement('div');
+      gWrap.style.cssText='display:flex;gap:6px;flex-basis:100%';
+      const gIn=document.createElement('input'); gIn.type='text'; gIn.placeholder='grupo (ex: Braço esquerdo)';
+      gIn.value=selLink.grupo||''; gIn.title='agrupa esta junta com outras no painel de motores — todas com o mesmo nome se movem juntas';
+      gIn.style.cssText='flex:1;min-width:0;background:#1e1f26;color:#e8e8ea;border:1px solid #383941;border-radius:7px;padding:6px 8px;font-size:12px';
+      gIn.addEventListener('change',function(){
+        selLink.grupo=gIn.value.trim()||undefined;
+        if(!selLink.grupo){ selLink.subgrupo=undefined; sIn.value=''; }
+        verMotores();
+      });
+      const sIn=document.createElement('input'); sIn.type='text'; sIn.placeholder='subgrupo (opcional, ex: dedo 1)';
+      sIn.value=selLink.subgrupo||''; sIn.title='dentro do grupo, um subnível — ex: cada dedo dentro da mão';
+      sIn.style.cssText='flex:1;min-width:0;background:#1e1f26;color:#e8e8ea;border:1px solid #383941;border-radius:7px;padding:6px 8px;font-size:12px';
+      sIn.addEventListener('change',function(){ selLink.subgrupo=sIn.value.trim()||undefined; verMotores(); });
+      gWrap.appendChild(gIn); gWrap.appendChild(sIn);
+      bar.appendChild(gWrap);
     }
-    const br=document.createElement('button'); br.textContent='Remover';
-    br.onclick=function(){ snapshot(); ligRemove(selLink.c,selLink.kind);
-      if(selLink.mk) scene.remove(selLink.mk); if(selLink.mkB) scene.remove(selLink.mkB);
-      links=links.filter(x=>x!==selLink); selLink=null; modoPivo=false; recalcularVetos(); ui(); };
-    bar.appendChild(br);
     document.getElementById('stat').textContent=parts.length+' pe\u00e7as \u00b7 '+links.length+' liga\u00e7\u00f5es';
-    if(selLink.kind==='mola'){
+    if(selLink.kind==='weld'){
+      document.getElementById('selName').textContent='SOLDA';
+      document.getElementById('params').innerHTML='';
+      document.getElementById('rots').innerHTML='';
+    }
+    else if(selLink.kind==='mola'){
       const ed=document.getElementById('editor'); ed.style.display='block';
       document.getElementById('selName').textContent='MOLA';
       const box=document.getElementById('params'); box.innerHTML='';
@@ -1753,7 +1817,7 @@ function ui(){
     bp.className=modoPivo?'acc':'';
     bp.onclick=function(){ modoPivo=!modoPivo; ui(); }; bar.appendChild(bp);
     const bi=document.createElement('button');
-    bi.className=imanOn?'acc':''; bi.textContent=(imanOn?'🧲 ímã':'🧲 ímã off');
+    bi.className=imanOn?'acc':''; bi.innerHTML=ICO_ENCAIXE+(imanOn?'ímã':'ímã off');
     bi.onclick=function(){ imanOn=!imanOn; imaAtivo=null; verPrevia(); ui(); };
     bar.appendChild(bi);
     if(imaAtivo){ const t=document.createElement('span');
@@ -1762,7 +1826,7 @@ function ui(){
     const bc=document.createElement('button'); bc.textContent='⌖ no contato';
     bc.onclick=function(){ try{ noContato(); }catch(e){ shout('contato: '+e.message); } };
     bar.appendChild(bc);
-    const ba=document.createElement('button'); ba.textContent='↺ centro';
+    const ba=document.createElement('button'); ba.innerHTML=ICO_RESET+'centro';
     ba.onclick=function(){ pivotUser=null; pivotLivre=null; verPrevia(); }; bar.appendChild(ba);
     const lab=document.createElement('span'); lab.style.cssText='font-size:12px;color:#8b8d98';
     lab.textContent='eixo'; bar.appendChild(lab);
@@ -1793,10 +1857,10 @@ function ui(){
     const bd=document.getElementById('btDup');
     if(bd) bd.textContent = (grupoDe(one).length>1) ? 'Duplicar montagem' : 'Duplicar';
     const bg=document.getElementById('btGravar');
-    if(bg) bg.textContent = (grupoDe(one).length>1) ? '💾 Gravar montagem' : '💾 Gravar';
+    if(bg) bg.innerHTML = ICO_GRAVAR + ((grupoDe(one).length>1) ? 'Gravar montagem' : 'Gravar');
     const gf=document.getElementById('gravarForm'); if(gf) gf.style.display='none';
     const bf=document.getElementById('btFixar');
-    if(bf){ bf.textContent=one.fixa?'📌 Fixada':'📌 Fixar'; bf.className=one.fixa?'go':''; }
+    if(bf){ bf.innerHTML=ICO_FIXAR+(one.fixa?'Fixada':'Fixar'); bf.className=one.fixa?'go':''; }
     const rb=document.getElementById('rots'); rb.innerHTML='';
     ['x','y','z'].forEach(function(ax){
       slider(rb,'giro '+ax.toUpperCase(),-180,180,5,one.rot[ax],v=>v.toFixed(0)+' \u00b0',
@@ -1816,36 +1880,172 @@ function verMotores(){
   if(!mot.length) return;
   box.innerHTML='';
   const NOME={hinge:'Dobradiça',pino:'Pino',trilho:'Trilho',ball:'Esférica'};
-  mot.forEach(function(l){
+
+  const btA=document.getElementById('btAgrupar');
+  if(btA){ btA.className=modoAgrupar?'acc':''; btA.textContent=modoAgrupar?'Cancelar':'Agrupar juntas'; }
+
+  if(modoAgrupar){
+    const dica=document.createElement('div');
+    dica.style.cssText='font-size:11px;color:#8b8d98;margin-bottom:8px';
+    dica.textContent='Marque as juntas que devem se mover juntas, dê um nome ao grupo e confirme.';
+    box.appendChild(dica);
+
+    const form=document.createElement('div');
+    form.style.cssText='display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap';
+    const gIn=document.createElement('input'); gIn.type='text'; gIn.placeholder='nome do grupo (ex: Braço esquerdo)';
+    gIn.style.cssText='flex:1;min-width:140px;background:#1e1f26;color:#e8e8ea;border:1px solid #383941;border-radius:7px;padding:7px 9px;font-size:12px';
+    const sIn=document.createElement('input'); sIn.type='text'; sIn.placeholder='subgrupo (opcional)';
+    sIn.style.cssText='flex:1;min-width:110px;background:#1e1f26;color:#e8e8ea;border:1px solid #383941;border-radius:7px;padding:7px 9px;font-size:12px';
+    form.appendChild(gIn); form.appendChild(sIn);
+    box.appendChild(form);
+
+    const bConf=document.createElement('button');
+    bConf.className='go'; bConf.textContent='Confirmar ('+selecaoAgrupar.size+')';
+
+    mot.forEach(function(l){
+      const row=document.createElement('label');
+      row.style.cssText='display:flex;align-items:center;gap:8px;margin:5px 0;padding:4px 6px;border-radius:7px;cursor:pointer;background:'+(selecaoAgrupar.has(l)?'#1f2e1c':'transparent');
+      const chk=document.createElement('input'); chk.type='checkbox';
+      chk.checked=selecaoAgrupar.has(l);
+      chk.addEventListener('change',function(){
+        if(chk.checked) selecaoAgrupar.add(l); else selecaoAgrupar.delete(l);
+        row.style.background=chk.checked?'#1f2e1c':'transparent';
+        bConf.textContent='Confirmar ('+selecaoAgrupar.size+')';
+      });
+      const txt=document.createElement('span'); txt.style.cssText='font-size:13px;color:#d8d9e0';
+      txt.textContent=(NOME[l.kind]||l.kind)+' '+l.pa.id+'\u2192'+l.pb.id+
+        (l.grupo?' \u2014 j\u00e1 em "'+l.grupo+(l.subgrupo?' \u203a '+l.subgrupo:'')+'"':'');
+      row.appendChild(chk); row.appendChild(txt);
+      box.appendChild(row);
+    });
+
+    const acoes=document.createElement('div');
+    acoes.style.cssText='display:flex;gap:6px;margin-top:10px';
+    bConf.onclick=function(){
+      const nome=gIn.value.trim();
+      if(!nome){ shout('digite um nome pro grupo antes de confirmar'); return; }
+      if(!selecaoAgrupar.size){ shout('marque ao menos uma junta'); return; }
+      const sub=sIn.value.trim()||undefined;
+      selecaoAgrupar.forEach(function(l){ l.grupo=nome; l.subgrupo=sub; });
+      modoAgrupar=false; selecaoAgrupar.clear();
+      verMotores();
+    };
+    const bCanc=document.createElement('button'); bCanc.textContent='Cancelar';
+    bCanc.onclick=function(){ modoAgrupar=false; selecaoAgrupar.clear(); verMotores(); };
+    acoes.appendChild(bConf); acoes.appendChild(bCanc);
+    box.appendChild(acoes);
+    return;
+  }
+
+  // botões MOMENTÂNEOS: agem só enquanto pressionados (usado por linha individual e por grupo)
+  function press(txt,onLiga,onDesliga){
+    const b=document.createElement('button');
+    b.textContent=txt; b.style.cssText='padding:7px 14px;font-size:15px;flex:1;user-select:none;touch-action:none';
+    const liga=function(e){ if(e.cancelable)e.preventDefault(); if(!running) B.play(); onLiga();
+      b.style.background='#2f4a28'; };
+    const desliga=function(){ onDesliga(); b.style.background=''; };
+    b.addEventListener('mousedown',liga); b.addEventListener('touchstart',liga,{passive:false});
+    b.addEventListener('mouseup',desliga); b.addEventListener('mouseleave',desliga);
+    b.addEventListener('touchend',desliga); b.addEventListener('touchcancel',desliga);
+    return b;
+  }
+
+  function linhaMotor(l){
     const row=document.createElement('div');
     row.style.cssText='display:flex;align-items:center;gap:6px;margin:4px 0';
     const lab=document.createElement('label');
-    lab.style.cssText='font-size:12px;color:#a8c4a5;width:82px;cursor:pointer';
+    lab.style.cssText='font-size:12px;color:#a8c4a5;width:82px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
     lab.textContent=(NOME[l.kind]||l.kind)+' '+l.pa.id+'\u2192'+l.pb.id;
     lab.onclick=function(){ selLink=l; sel=[]; paint(); ui(); };
     const s=(l.motor.inv?-1:1);
-    // botões MOMENTÂNEOS: agem só enquanto pressionados
-    function press(txt,dir){
-      const b=document.createElement('button');
-      b.textContent=txt; b.style.cssText='padding:7px 14px;font-size:15px;flex:1;user-select:none;touch-action:none';
-      const liga=function(e){ if(e.cancelable)e.preventDefault(); if(!running) B.play(); comandar(l,dir*s);
-        b.style.background='#2f4a28'; };
-      const desliga=function(){ comandar(l,0); b.style.background=''; };
-      b.addEventListener('mousedown',liga); b.addEventListener('touchstart',liga,{passive:false});
-      b.addEventListener('mouseup',desliga); b.addEventListener('mouseleave',desliga);
-      b.addEventListener('touchend',desliga); b.addEventListener('touchcancel',desliga);
-      return b;
-    }
     const mag=document.createElement('input'); mag.type='range';
     mag.min=0.5; mag.max=8; mag.step=0.1; mag.value=l.motor.mag;
     mag.style.cssText='width:64px;min-width:0';
     mag.title='velocidade';
     mag.addEventListener('input',function(){ l.motor.mag=+mag.value; if(l.motor.ativo) comandar(l, (l.motor.vel<0?-1:1)); });
     row.appendChild(lab);
-    row.appendChild(press('\u25c0', -1));
-    row.appendChild(press('\u25b6', 1));
+    row.appendChild(press('\u25c0', ()=>comandar(l,-1*s), ()=>comandar(l,0)));
+    row.appendChild(press('\u25b6', ()=>comandar(l,1*s), ()=>comandar(l,0)));
     row.appendChild(mag);
-    box.appendChild(row);
+    return row;
+  }
+
+  // linha "mover tudo isto de uma vez" — reutilizada tanto no nível de grupo quanto no de subgrupo
+  function linhaMestre(rotulo,lista){
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:6px;margin:2px 0 6px';
+    const lab=document.createElement('span'); lab.style.cssText='font-size:11px;color:#6f8a6c;width:82px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'; lab.textContent=rotulo;
+    row.appendChild(lab);
+    row.appendChild(press('\u25c0\u25c0',
+      ()=>lista.forEach(l=>comandar(l,-1*(l.motor.inv?-1:1))),
+      ()=>lista.forEach(l=>comandar(l,0))));
+    row.appendChild(press('\u25b6\u25b6',
+      ()=>lista.forEach(l=>comandar(l,1*(l.motor.inv?-1:1))),
+      ()=>lista.forEach(l=>comandar(l,0))));
+    return row;
+  }
+
+  // cabeçalho recolhível genérico — usado pro grupo (preset) e, um nível abaixo, pro subgrupo (ex: um dedo)
+  function blocoRecolhivel(chaveEstado,titulo,lista,indent){
+    const fechado=gruposFechados.has(chaveEstado);
+    const head=document.createElement('div');
+    head.style.cssText='display:flex;align-items:center;gap:6px;margin:'+(indent?'4px 0 2px':'8px 0 2px')+';cursor:pointer';
+    head.innerHTML=`<span style="display:inline-flex">${ICO_CHEVRON}</span>`+
+      `<span style="font-size:11px;letter-spacing:.06em;color:#8ba888;flex:1">${titulo.toUpperCase()} · ${lista.length}</span>`;
+    head.querySelector('svg').style.transform=fechado?'rotate(0deg)':'rotate(90deg)';
+    const corpo=document.createElement('div');
+    corpo.style.cssText='display:'+(fechado?'none':'block')+';padding-left:4px;border-left:2px solid #2c3d29;margin-left:6px';
+    head.onclick=function(){
+      if(gruposFechados.has(chaveEstado)) gruposFechados.delete(chaveEstado); else gruposFechados.add(chaveEstado);
+      verMotores();
+    };
+    return {head,corpo};
+  }
+
+  // agrupa por l.grupo (presets como a mão robótica taggeiam na criação);
+  // juntas motorizadas avulsas caem no balde "Outras juntas"
+  const grupos=new Map();
+  mot.forEach(function(l){
+    const g=l.grupo||'Outras juntas';
+    if(!grupos.has(g)) grupos.set(g,[]);
+    grupos.get(g).push(l);
+  });
+
+  // só 1 balde (o caso comum de 1-2 motores soltos): mantém a lista plana de sempre,
+  // sem cabeçalho — não faz sentido "agrupar" o que já é uma lista curta.
+  if(grupos.size===1 && grupos.has('Outras juntas')){
+    mot.forEach(function(l){ box.appendChild(linhaMotor(l)); });
+    return;
+  }
+
+  grupos.forEach(function(lista,nome){
+    const {head,corpo}=blocoRecolhivel(nome,nome,lista,false);
+    corpo.appendChild(linhaMestre('grupo todo',lista));
+
+    // subgrupos dentro do grupo (ex: cada dedo dentro da mão) — só aparece se
+    // houver mais de um subgrupo real; senão renderiza a lista de sempre, sem nível extra
+    const subs=new Map();
+    lista.forEach(function(l){
+      const s=l.subgrupo||'';
+      if(!subs.has(s)) subs.set(s,[]);
+      subs.get(s).push(l);
+    });
+    const temSubgrupos=subs.size>1 || (subs.size===1 && !subs.has(''));
+
+    if(!temSubgrupos){
+      lista.forEach(function(l){ corpo.appendChild(linhaMotor(l)); });
+    } else {
+      subs.forEach(function(listaSub,sub){
+        if(sub===''){ listaSub.forEach(function(l){ corpo.appendChild(linhaMotor(l)); }); return; }
+        const chaveSub=nome+'\u203a'+sub;
+        const r=blocoRecolhivel(chaveSub,sub,listaSub,true);
+        r.corpo.appendChild(linhaMestre('este todo',listaSub));
+        listaSub.forEach(function(l){ r.corpo.appendChild(linhaMotor(l)); });
+        corpo.appendChild(r.head); corpo.appendChild(r.corpo);
+      });
+    }
+
+    box.appendChild(head); box.appendChild(corpo);
   });
 }
 function montarListaLigacoes(p){
@@ -1862,7 +2062,7 @@ function montarListaLigacoes(p){
     const outra=(l.pa===p)?l.pb:l.pa;
     const b=document.createElement('button');
     b.style.cssText='flex:1;text-align:left;font-size:12px';
-    b.textContent=(NOMES[l.kind]||l.kind)+' com '+CAT[outra.tipo].nome+' #'+outra.id+(l.motor&&l.motor.on?' ⚙':'');
+    b.innerHTML=(NOMES[l.kind]||l.kind)+' com '+CAT[outra.tipo].nome+' #'+outra.id+(l.motor&&l.motor.on?' '+ICO_MOTOR:'');
     b.onclick=function(){ selLink=l; sel=[]; paint(); ui(); };
     const x=document.createElement('button'); x.textContent='✕';
     x.style.cssText='padding:6px 12px;color:#e08080';
@@ -1933,7 +2133,7 @@ function montarMaoRobotica(){
     setRot(p);
     return p;
   }
-  function criarJunta(a,b,kind,pivW,axDir){
+  function criarJunta(a,b,kind,pivW,axDir,sub){
     const r=montarLigacao(a,b,kind,pivW,axDir);
     ligAdd(r.c,kind);
     politicaColisao(r.c,kind,a,b);
@@ -1943,7 +2143,7 @@ function montarMaoRobotica(){
     scene.add(mkB);
     const l={c:r.c,kind:kind,a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
       pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pivW.clone(),curso:cursoDa(a),
-      axAz:angDeDir(axDir).az,axEl:angDeDir(axDir).el,
+      axAz:angDeDir(axDir).az,axEl:angDeDir(axDir).el,grupo:'Mão robótica',subgrupo:sub,
       motor:{on:false,vel:0,mag:3,forca:30,ativo:false}};
     links.push(l);
     return l;
@@ -1962,11 +2162,11 @@ function montarMaoRobotica(){
     {z: 0.045,comp:[0.050,0.034,0.025]},
   ];
   const baseX=0.05;
-  dedos.forEach(function(d){
+  dedos.forEach(function(d,i){
     let x=baseX, prev=palma;
     d.comp.forEach(function(c){
       const seg=criarPeca('barra',{comp:c,esp:0.012},{x:x+c/2,y:Y,z:d.z},{x:0,y:0,z:0});
-      const j=criarJunta(prev,seg,'hinge',new THREE.Vector3(x,Y,d.z),EIXO_FLEXAO);
+      const j=criarJunta(prev,seg,'hinge',new THREE.Vector3(x,Y,d.z),EIXO_FLEXAO,'Dedo '+(i+1));
       ligarMotor(j);
       prev=seg; x+=c;
     });
@@ -1977,7 +2177,7 @@ function montarMaoRobotica(){
   [0.04,0.028].forEach(function(c){
     const cz=tz-c/2;
     const seg=criarPeca('barra',{comp:c,esp:0.012},{x:0.01,y:Y,z:cz},{x:0,y:90,z:0});
-    const j=criarJunta(prevT,seg,'hinge',new THREE.Vector3(0.01,Y,tz),EIXO_OPOSICAO);
+    const j=criarJunta(prevT,seg,'hinge',new THREE.Vector3(0.01,Y,tz),EIXO_OPOSICAO,'Polegar');
     ligarMotor(j);
     prevT=seg; tz-=c;
   });
@@ -2035,7 +2235,7 @@ function montarDiferencial(){
     const mkB=new THREE.Mesh(new THREE.SphereGeometry(MKE*0.010,10,8),new THREE.MeshBasicMaterial({color:0xd9a04a}));
     scene.add(mkB);
     const l={c:r.c,kind:'pino',a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
-      pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv,curso:cursoDa(a),axAz:0,axEl:0,
+      pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv,curso:cursoDa(a),axAz:0,axEl:0,grupo:'Diferencial',
       motor:{on:false,vel:0,mag:2,forca:30,ativo:false}};
     links.push(l); return l;
   }
@@ -2126,6 +2326,11 @@ window.B={
     catch(e){ shout('gravar: '+e.message); }
   },
   maoRobotica:function(){ try{ montarMaoRobotica(); }catch(e){ shout('mão robótica: '+e.message); } },
+  agruparJuntas:function(){
+    modoAgrupar=!modoAgrupar;
+    if(!modoAgrupar) selecaoAgrupar.clear();
+    verMotores();
+  },
   play:function(){ running=!running; document.getElementById('playBtn').textContent=running?'\u275a\u275a Pausar':'\u25b6 Testar';
     const p2=document.getElementById('playBtn2'); if(p2) p2.textContent=running?'\u275a\u275a':'\u25b6';
     if(running) parts.forEach(p=>{p.home=p.body.position.clone();p.hq=p.body.quaternion.clone();});
@@ -2138,7 +2343,15 @@ window.B={
     running=false; document.getElementById('playBtn').textContent='\u25b6 Testar';
     const p2=document.getElementById('playBtn2'); if(p2) p2.textContent='\u25b6';
     limparTudo(); ui(); },
-  del:function(){ const p=sel[0]; if(!p) return;
+  del:function(){
+    const p=sel[0];
+    if(!p){
+      if(!selLink) return;
+      snapshot(); ligRemove(selLink.c,selLink.kind);
+      if(selLink.mk) scene.remove(selLink.mk); if(selLink.mkB) scene.remove(selLink.mkB);
+      links=links.filter(x=>x!==selLink); selLink=null; modoPivo=false; recalcularVetos(); ui();
+      return;
+    }
     snapshot();
     links=links.filter(function(l){ if(l.a===p.id||l.b===p.id){ligRemove(l.c,l.kind); if(l.mk)scene.remove(l.mk); if(l.mkB)scene.remove(l.mkB); if(selLink===l) selLink=null; return false;} return true;});
     if(seguindo===p) seguindo=null;
@@ -2150,7 +2363,7 @@ window.B={
     Object.keys(p.par).forEach(k=>q.par[k]=p.par[k]);
     q.rot.x=p.rot.x; q.rot.y=p.rot.y; q.rot.z=p.rot.z;
     rebuild(q); setRot(q); ui(); },
-  desel:function(){ sel=[]; paint(); ui(); },
+  desel:function(){ sel=[]; selLink=null; paint(); ui(); },
   zoom:function(f){ orb.d=Math.max(0.3,Math.min(14,orb.d*f)); placeCam(); },
   verTudo:verTudo,
   seguir:alvoSeguir,
@@ -2158,6 +2371,12 @@ window.B={
   nudge:nudge,
   centrar:function(){ centrar(sel[0]); },
   join:join,
+  instalarApp:function(){
+    if(!window._pwaPrompt){ shout('já instalado, ou seu navegador não oferece instalação direta — use o menu do navegador > "Adicionar à tela inicial"'); return; }
+    window._pwaPrompt.prompt();
+    window._pwaPrompt.userChoice.then(function(){ window._pwaPrompt=null;
+      const b=document.getElementById('btInstalar'); if(b) b.style.display='none'; });
+  },
   _dbg:function(){ return {parts:parts,links:links,sel:sel,selLink:selLink,cam:cam,scene:scene,
                            pivotUser:pivotUser,
                            setSel:function(a){ sel=a; paint(); ui(); }}; }
@@ -2175,6 +2394,24 @@ try{
   else if(carregarCenaSalva()) avisar('sua última cena foi restaurada ✓ (salva automaticamente)');
 }catch(e){ shout('restaurar: '+e.message); }
 }catch(err){ shout('FALHA NA CARGA: '+err.message); }
+</script>
+
+<script>
+// PWA: instalável + funciona offline depois da primeira visita. Isolado do script
+// principal de propósito — uma falha aqui nunca deve derrubar o app em si.
+if('serviceWorker' in navigator){
+  window.addEventListener('load',function(){
+    navigator.serviceWorker.register('sw.js').catch(function(){});
+  });
+}
+window.addEventListener('beforeinstallprompt',function(e){
+  e.preventDefault();
+  window._pwaPrompt=e;
+  const b=document.getElementById('btInstalar'); if(b) b.style.display='';
+});
+window.addEventListener('appinstalled',function(){
+  const b=document.getElementById('btInstalar'); if(b) b.style.display='none';
+});
 </script>
 
 </body>
