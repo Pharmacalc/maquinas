@@ -277,7 +277,12 @@ const CAT={
   roldana:{nome:'Roldana',p:{raio:{r:[0.03,0.20],v:0.07,u:'m'},larg:{r:[0.015,0.08],v:0.032,u:'m'}}},
   corda:{nome:'Elo de corda',p:{comp:{r:[0.015,0.12],v:0.035,u:'m'},raio:{r:[0.004,0.02],v:0.007,u:'m'}}},
   bracoA:{nome:'Braço em A (susp.)',p:{base:{r:[0.04,0.5],v:0.16,u:'m'},braco:{r:[0.04,0.6],v:0.22,u:'m'},esp:{r:[0.01,0.05],v:0.022,u:'m'}}},
-  cubo:{nome:'Cubo (arestas)',p:{aresta:{r:[0.04,0.5],v:0.16,u:'m'},esp:{r:[0.008,0.04],v:0.016,u:'m'}}},
+  cubo:{nome:'Caixa (arestas)',p:{
+    compX:{r:[0.04,0.5],v:0.16,u:'m'},
+    compY:{r:[0.04,0.5],v:0.16,u:'m'},
+    compZ:{r:[0.04,0.5],v:0.16,u:'m'},
+    esp:{r:[0.008,0.04],v:0.016,u:'m'}
+  }},
   manga:{nome:'Cubo da roda (manga de eixo)',p:{
     raio:{r:[0.03,0.15],v:0.07,u:'m'},
     esp:{r:[0.008,0.03],v:0.015,u:'m'},
@@ -599,26 +604,29 @@ function build(tipo,par){
       new THREE.MeshLambertMaterial({color:0x5a6170}));
     rot.position.set(braco,0,0); g.add(rot);
   } else if(tipo==='cubo'){
-    // Cubo em arestas: mesmo material do braço em A — 12 barras compostas num corpo
-    // rígido só, sem solda nenhuma. h = meia-aresta; cada barra é axis-aligned,
+    // Caixa em arestas: mesmo material do braço em A — 12 barras compostas num
+    // corpo rígido só, sem solda. Cada eixo (X/Y/Z) agora tem seu próprio
+    // comprimento independente — deixa de ser necessariamente um cubo, vira uma
+    // caixa retangular ajustável por dimensão. Cada barra continua axis-aligned,
     // então nem precisa de quaternion (ao contrário do braço em A, que converge).
-    const L=par.aresta, e=par.esp, h=L/2;
+    const Lx=par.compX, Ly=par.compY, Lz=par.compZ, e=par.esp;
+    const hx=Lx/2, hy=Ly/2, hz=Lz/2;
     [-1,1].forEach(function(s1){ [-1,1].forEach(function(s2){
-      // aresta ao longo de X, nas 4 combinações de (y,z)
-      shapes.push({s:new CANNON.Box(new CANNON.Vec3(h,e/2,e/2)),o:new CANNON.Vec3(0,s1*h,s2*h)});
-      let m=new THREE.Mesh(new THREE.BoxGeometry(L,e,e),mat); m.position.set(0,s1*h,s2*h); g.add(m);
-      // aresta ao longo de Y, nas 4 combinações de (x,z)
-      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,h,e/2)),o:new CANNON.Vec3(s1*h,0,s2*h)});
-      m=new THREE.Mesh(new THREE.BoxGeometry(e,L,e),mat); m.position.set(s1*h,0,s2*h); g.add(m);
-      // aresta ao longo de Z, nas 4 combinações de (x,y)
-      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,e/2,h)),o:new CANNON.Vec3(s1*h,s2*h,0)});
-      m=new THREE.Mesh(new THREE.BoxGeometry(e,e,L),mat); m.position.set(s1*h,s2*h,0); g.add(m);
+      // aresta ao longo de X (comprimento Lx), nas 4 combinações de (y,z)
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(hx,e/2,e/2)),o:new CANNON.Vec3(0,s1*hy,s2*hz)});
+      let m=new THREE.Mesh(new THREE.BoxGeometry(Lx,e,e),mat); m.position.set(0,s1*hy,s2*hz); g.add(m);
+      // aresta ao longo de Y (comprimento Ly), nas 4 combinações de (x,z)
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,hy,e/2)),o:new CANNON.Vec3(s1*hx,0,s2*hz)});
+      m=new THREE.Mesh(new THREE.BoxGeometry(e,Ly,e),mat); m.position.set(s1*hx,0,s2*hz); g.add(m);
+      // aresta ao longo de Z (comprimento Lz), nas 4 combinações de (x,y)
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,e/2,hz)),o:new CANNON.Vec3(s1*hx,s2*hy,0)});
+      m=new THREE.Mesh(new THREE.BoxGeometry(e,e,Lz),mat); m.position.set(s1*hx,s2*hy,0); g.add(m);
     }); });
     // vértices (só estética — ajuda a enxergar os 8 cantos onde ligar outras peças)
     [-1,1].forEach(function(sx){ [-1,1].forEach(function(sy){ [-1,1].forEach(function(sz){
       const v=new THREE.Mesh(new THREE.SphereGeometry(e*0.6,10,8),
         new THREE.MeshLambertMaterial({color:0x5a6170}));
-      v.position.set(sx*h,sy*h,sz*h); g.add(v);
+      v.position.set(sx*hx,sy*hy,sz*hz); g.add(v);
     }); }); });
   } else if(tipo==='manga'){
     // Cubo da roda como CHAPA REDONDA — cancelamos a placa triangular (deu erro de
@@ -812,7 +820,7 @@ function cursoDa(p){
   if(p.tipo==='placa') return Math.max(p.par.larg,p.par.prof);
   if(p.tipo==='arco') return p.par.raio*2;
   if(p.tipo==='bracoA') return p.par.braco*2;
-  if(p.tipo==='cubo') return p.par.aresta;
+  if(p.tipo==='cubo') return Math.max(p.par.compX,p.par.compY,p.par.compZ);
   if(p.tipo==='manga') return p.par.raio*2;
   return 0.3;
 }
@@ -1397,8 +1405,8 @@ function pontosLocais(p){
     add(0,0,-q.base/2,'pivô interno'); add(0,0,q.base/2,'pivô interno');
     add(q.braco,0,0,'ponta');
   } else if(p.tipo==='cubo'){
-    const h=q.aresta/2;
-    [-1,1].forEach(sx=>[-1,1].forEach(sy=>[-1,1].forEach(sz=>add(sx*h,sy*h,sz*h,'vértice'))));
+    const hx=q.compX/2, hy=q.compY/2, hz=q.compZ/2;
+    [-1,1].forEach(sx=>[-1,1].forEach(sy=>[-1,1].forEach(sz=>add(sx*hx,sy*hy,sz*hz,'vértice'))));
   } else if(p.tipo==='manga'){
     add(0,q.raio,0,'rótula superior');
     add(0,-q.raio,0,'rótula inferior');
