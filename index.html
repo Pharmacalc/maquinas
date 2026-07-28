@@ -22,10 +22,10 @@
   <div id="err" style="display:none;padding:10px 12px;background:#3a1f22;color:#ffb4b4;font-size:12px;font-family:monospace;white-space:pre-wrap"></div>
 
   <div id="stage" style="position:relative;width:100%;height:44vh;min-height:250px;flex-shrink:0;background:#1b1c21;touch-action:none">
-    <div style="position:absolute;left:8px;top:8px;z-index:6">
+    <div style="position:absolute;right:8px;top:8px;z-index:6">
       <button id="btPecas" onclick="B.togglePecas()" style="font-weight:600">Peças ▾</button>
-      <div id="painelPecas" style="display:none;position:absolute;top:42px;left:0;background:#1f2027;border:1px solid #2c2d34;border-radius:10px;padding:8px;width:min(78vw,340px);max-height:34vh;overflow-y:auto;box-shadow:0 6px 20px rgba(0,0,0,.4)">
-        <div id="prateleiraTabs" style="display:flex;gap:6px;margin-bottom:8px"></div>
+      <div id="painelPecas" style="display:none;position:absolute;top:42px;right:0;background:#1f2027;border:1px solid #2c2d34;border-radius:10px;padding:8px;width:min(88vw,380px);max-height:72vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-shadow:0 6px 20px rgba(0,0,0,.4)">
+        <div id="prateleiraTabs" style="display:flex;gap:6px;margin-bottom:8px;position:sticky;top:-8px;background:#1f2027;padding:8px 0 6px;z-index:1"></div>
         <div id="shelf-basicas" style="display:flex;gap:6px;flex-wrap:wrap"></div>
         <div id="shelf-prontas" style="display:none;gap:6px;flex-wrap:wrap"></div>
         <div id="shelf-complexas" style="display:none;gap:6px;flex-wrap:wrap"></div>
@@ -129,6 +129,9 @@
   #app .acc{border-color:#5a6f96;background:#28334a;color:#c6d8f2}
   #app .go{border-color:#3f6a4a;background:#22301f;color:#b7e0b9}
   #app .ax{padding:5px 9px;font-size:12px}
+  /* botões de peça dentro do menu suspenso: compactos, pra caber mais sem rolagem */
+  #app #painelPecas button{font-size:12px;padding:6px 9px;border-radius:7px}
+  #app #painelPecas .abaShelf{padding:5px 10px}
   #app .abaShelf{background:#2a2440;border-color:#453a66;color:#c9b8ea;font-size:12px;letter-spacing:.03em}
   #app .abaShelf.on{background:#3a2f5c;border-color:#6a53a0;color:#ecdfff}
   #app .ax.on{background:#28334a;border-color:#5a6f96;color:#c6d8f2}
@@ -283,9 +286,11 @@ const CAT={
   corda:{nome:'Elo de corda',p:{comp:{r:[0.015,0.12],v:0.035,u:'m'},raio:{r:[0.004,0.02],v:0.007,u:'m'}}},
   bracoA:{nome:'Braço em A (susp.)',p:{base:{r:[0.04,0.5],v:0.16,u:'m'},braco:{r:[0.04,0.6],v:0.22,u:'m'},esp:{r:[0.01,0.05],v:0.022,u:'m'}}},
   cubo:{nome:'Caixa (arestas)',p:{
-    compX:{r:[0.04,0.5],v:0.16,u:'m'},
+    compX:{r:[0.02,0.5],v:0.16,u:'m'},
+    compZ:{r:[0.02,0.5],v:0.16,u:'m'},
+    compXtopo:{r:[0.02,0.5],v:0.16,u:'m'},
+    compZtopo:{r:[0.02,0.5],v:0.16,u:'m'},
     compY:{r:[0.04,0.5],v:0.16,u:'m'},
-    compZ:{r:[0.04,0.5],v:0.16,u:'m'},
     esp:{r:[0.008,0.04],v:0.016,u:'m'}
   }},
   manga:{nome:'Cubo da roda (manga de eixo)',p:{
@@ -340,6 +345,11 @@ function dentesAxiais(g,mat,shapes,R,N,e,prof,altAx,chan){
   }
 }
 let parts=[],sel=[],running=false,nId=0,hingeAx=0,links=[];
+// poseSuja = a física já mexeu nas peças desde a última edição/reinício, ou seja,
+// a pose atual NÃO é mais a pose de montagem. Serve pra impedir que apertar
+// "Testar" de novo (ou tocar num botão de motor, que dá play sozinho) sobrescreva
+// a pose de montagem com a peça já deformada — era assim que se perdia o trabalho.
+let poseSuja=false;
 // Ícones dos botões cujo texto muda em runtime (Gravar/Fixar) — precisam ficar em
 // innerHTML, não textContent, senão a troca de texto apaga o ícone junto.
 const ICO_GRAVAR='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21 12 16.5 6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/></svg>';
@@ -611,30 +621,50 @@ function build(tipo,par){
       new THREE.MeshLambertMaterial({color:0x5a6170}));
     rot.position.set(braco,0,0); g.add(rot);
   } else if(tipo==='cubo'){
-    // Caixa em arestas: mesmo material do braço em A — 12 barras compostas num
-    // corpo rígido só, sem solda. Cada eixo (X/Y/Z) agora tem seu próprio
-    // comprimento independente — deixa de ser necessariamente um cubo, vira uma
-    // caixa retangular ajustável por dimensão. Cada barra continua axis-aligned,
-    // então nem precisa de quaternion (ao contrário do braço em A, que converge).
-    const Lx=par.compX, Ly=par.compY, Lz=par.compZ, e=par.esp;
-    const hx=Lx/2, hy=Ly/2, hz=Lz/2;
-    [-1,1].forEach(function(s1){ [-1,1].forEach(function(s2){
-      // aresta ao longo de X (comprimento Lx), nas 4 combinações de (y,z)
-      shapes.push({s:new CANNON.Box(new CANNON.Vec3(hx,e/2,e/2)),o:new CANNON.Vec3(0,s1*hy,s2*hz)});
-      let m=new THREE.Mesh(new THREE.BoxGeometry(Lx,e,e),mat); m.position.set(0,s1*hy,s2*hz); g.add(m);
-      // aresta ao longo de Y (comprimento Ly), nas 4 combinações de (x,z)
-      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,hy,e/2)),o:new CANNON.Vec3(s1*hx,0,s2*hz)});
-      m=new THREE.Mesh(new THREE.BoxGeometry(e,Ly,e),mat); m.position.set(s1*hx,0,s2*hz); g.add(m);
-      // aresta ao longo de Z (comprimento Lz), nas 4 combinações de (x,y)
-      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,e/2,hz)),o:new CANNON.Vec3(s1*hx,s2*hy,0)});
-      m=new THREE.Mesh(new THREE.BoxGeometry(e,e,Lz),mat); m.position.set(s1*hx,s2*hy,0); g.add(m);
-    }); });
-    // vértices (só estética — ajuda a enxergar os 8 cantos onde ligar outras peças)
-    [-1,1].forEach(function(sx){ [-1,1].forEach(function(sy){ [-1,1].forEach(function(sz){
+    // Caixa em arestas: 12 barras compostas num corpo rigido so, sem solda.
+    // Base e topo tem largura/profundidade PROPRIAS — com topo = base vira a caixa
+    // reta de sempre; com topo diferente vira trapezio/cunha. As 4 arestas verticais
+    // deixam de ser retas nesse caso, entao sao posicionadas por
+    // "barra entre dois cantos" (mesma tecnica do braco em A, com quaternion).
+    const e=par.esp;
+    const hxb=par.compX/2, hzb=par.compZ/2;        // meia base
+    const hxt=par.compXtopo/2, hzt=par.compZtopo/2; // meio topo
+    const hy=par.compY/2;
+    // 8 cantos: 0-3 base (y=-hy), 4-7 topo (y=+hy), na mesma ordem angular
+    const C=[
+      [-hxb,-hy,-hzb],[ hxb,-hy,-hzb],[ hxb,-hy, hzb],[-hxb,-hy, hzb],
+      [-hxt, hy,-hzt],[ hxt, hy,-hzt],[ hxt, hy, hzt],[-hxt, hy, hzt]
+    ];
+    // poe uma barra ligando dois cantos quaisquer (verificado numericamente:
+    // as pontas do box caem exatamente sobre os dois cantos pedidos)
+    function barraEntre(a,b){
+      const dx=b[0]-a[0], dy=b[1]-a[1], dz=b[2]-a[2];
+      const L=Math.hypot(dx,dy,dz); if(L<1e-9) return;
+      const ux=dx/L, uy=dy/L, uz=dz/L;
+      const ax=0, ay=-uz, az=uy, n=Math.hypot(ax,ay,az);
+      const ang=Math.acos(Math.max(-1,Math.min(1,ux)));
+      const eixo = n<1e-9 ? [0,1,0] : [ax/n,ay/n,az/n];
+      const angF = n<1e-9 ? (ux>0?0:Math.PI) : ang;
+      const mx=(a[0]+b[0])/2, my=(a[1]+b[1])/2, mz=(a[2]+b[2])/2;
+      const q=new CANNON.Quaternion();
+      q.setFromAxisAngle(new CANNON.Vec3(eixo[0],eixo[1],eixo[2]),angF);
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(L/2,e/2,e/2)),o:new CANNON.Vec3(mx,my,mz),q:q});
+      const m=new THREE.Mesh(new THREE.BoxGeometry(L,e,e),mat);
+      m.position.set(mx,my,mz);
+      m.quaternion.setFromAxisAngle(new THREE.Vector3(eixo[0],eixo[1],eixo[2]).normalize(),angF);
+      g.add(m);
+    }
+    for(let i=0;i<4;i++){
+      barraEntre(C[i], C[(i+1)%4]);          // 4 arestas da base
+      barraEntre(C[4+i], C[4+(i+1)%4]);      // 4 arestas do topo
+      barraEntre(C[i], C[4+i]);              // 4 verticais (diagonais na cunha)
+    }
+    // vertices (so estetica - ajuda a enxergar os 8 cantos onde ligar outras pecas)
+    C.forEach(function(c){
       const v=new THREE.Mesh(new THREE.SphereGeometry(e*0.6,10,8),
         new THREE.MeshLambertMaterial({color:0x5a6170}));
-      v.position.set(sx*hx,sy*hy,sz*hz); g.add(v);
-    }); }); });
+      v.position.set(c[0],c[1],c[2]); g.add(v);
+    });
   } else if(tipo==='manga'){
     // Cubo da roda como CHAPA REDONDA — cancelamos a placa triangular (deu erro de
     // normal invertida no Cannon mesmo depois de 2 reconstruções). Solução mais
@@ -865,7 +895,7 @@ function cursoDa(p){
   if(p.tipo==='placa') return Math.max(p.par.larg,p.par.prof);
   if(p.tipo==='arco') return p.par.raio*2;
   if(p.tipo==='bracoA') return p.par.braco*2;
-  if(p.tipo==='cubo') return Math.max(p.par.compX,p.par.compY,p.par.compZ);
+  if(p.tipo==='cubo') return Math.max(p.par.compX,p.par.compY,p.par.compZ,p.par.compXtopo,p.par.compZtopo);
   if(p.tipo==='manga') return p.par.raio*2;
   return 0.3;
 }
@@ -901,6 +931,7 @@ function serializar(pecas,referencia,usarHome){
         pivW:{x:pivAgora.x-referencia.x,y:pivAgora.y-referencia.y,z:pivAgora.z-referencia.z},
         axAz:l.axAz, axEl:l.axEl, curso:l.curso,
         grupo:l.grupo, subgrupo:l.subgrupo,
+        amortecedor:l.amortecedor, doAmortecedor:l.doAmortecedor,
         mola:l.mola?Object.assign({},l.mola):undefined,
         eng:l.eng?Object.assign({},l.eng):undefined,
         motor:Object.assign({},l.motor,{ativo:false,vel:0})
@@ -933,10 +964,18 @@ function instanciarModelo(dados,origem){
     const novo={c:r.c,kind:dl.kind,a:a.id,b:b.id,pa:a,pb:b,mk:mk,mkB:mkB,
       pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:pv.clone(),curso:dl.curso,axAz:dl.axAz,axEl:dl.axEl,
       grupo:dl.grupo,subgrupo:dl.subgrupo,
+      amortecedor:dl.amortecedor,doAmortecedor:dl.doAmortecedor,
       mola:dl.mola?Object.assign({},dl.mola):undefined,
       eng:dl.eng?Object.assign({},dl.eng):undefined,
       motor:Object.assign({on:false,vel:0,mag:3,forca:30,ativo:false},dl.motor,{ativo:false,vel:0})};
     links.push(novo); aplicarMotor(novo);
+  });
+  // religa cada amortecedor à sua mola: a referência entre os dois objetos não
+  // sobrevive ao JSON, então reconstruímos pelo par de peças (mesmas a/b)
+  links.filter(l=>l.amortecedor).forEach(function(am){
+    const m=links.find(x=>x.doAmortecedor && x.kind==='mola' &&
+      ((x.a===am.a&&x.b===am.b)||(x.a===am.b&&x.b===am.a)));
+    if(m) am.molaLink=m;
   });
   recalcularVetos();
   return dados.partes.length?mapa[dados.partes[0].id]:null;
@@ -998,6 +1037,7 @@ function carregarDoHash(hs){
 }
 let undoStack=[];
 function snapshot(){
+  poseSuja=false;   // o usuário editou: a pose atual passa a ser a pose de montagem válida
   undoStack.push(serializarTudo());
   if(undoStack.length>20) undoStack.shift();
   atualizarBtDesfazer();
@@ -1462,8 +1502,12 @@ function pontosLocais(p){
     add(0,0,-q.base/2,'pivô interno'); add(0,0,q.base/2,'pivô interno');
     add(q.braco,0,0,'ponta');
   } else if(p.tipo==='cubo'){
-    const hx=q.compX/2, hy=q.compY/2, hz=q.compZ/2;
-    [-1,1].forEach(sx=>[-1,1].forEach(sy=>[-1,1].forEach(sz=>add(sx*hx,sy*hy,sz*hz,'vértice'))));
+    const hy=q.compY/2;
+    const hxb=q.compX/2, hzb=q.compZ/2, hxt=q.compXtopo/2, hzt=q.compZtopo/2;
+    [-1,1].forEach(sx=>[-1,1].forEach(sz=>{
+      add(sx*hxb,-hy,sz*hzb,'vértice');   // cantos da base
+      add(sx*hxt, hy,sz*hzt,'vértice');   // cantos do topo
+    }));
   } else if(p.tipo==='manga'){
     add(0,q.raio,0,'rótula superior');
     add(0,-q.raio,0,'rótula inferior');
@@ -1863,6 +1907,10 @@ const bDif=document.createElement('button'); bDif.className='acc';
 bDif.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5.5"/><path d="M12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1M18.5 18.5l-2.1-2.1M7.6 7.6 5.5 5.5"/></svg>Diferencial';
 bDif.onclick=function(){ B.diferencial(); fecharPecas(); };
 shelves.prontas.appendChild(bDif);
+const bAmo=document.createElement('button'); bAmo.className='acc';
+bAmo.textContent='Amortecedor';
+bAmo.onclick=function(){ B.amortecedor(); fecharPecas(); };
+shelves.prontas.appendChild(bAmo);
 const bCor=document.createElement('button'); bCor.className='acc';
 bCor.textContent='\u3030 Corda (16 elos)';
 bCor.onclick=function(){ B.corda(); fecharPecas(); };
@@ -1937,6 +1985,18 @@ function ui(){
       bm.className=selLink.motor.on?'go':''; bm.innerHTML=ICO_MOTOR+(selLink.motor.on?'motor ligado':'motorizar');
       bm.onclick=function(){ selLink.motor.on=!selLink.motor.on; aplicarMotor(selLink); paint(); ui(); verMotores(); };
       bar.appendChild(bm);
+      if(selLink.amortecedor){
+        const bmola=document.createElement('button');
+        bmola.className=selLink.molaLink?'go':'acc';
+        bmola.textContent=selLink.molaLink?'Mola ativa':'Ativar mola';
+        bmola.title='mede o comprimento de repouso da posição atual';
+        bmola.onclick=function(){
+          if(selLink.molaLink) removerMolaAmortecedor(selLink);
+          else ativarMolaAmortecedor(selLink);
+          ui();
+        };
+        bar.appendChild(bmola);
+      }
       const gWrap=document.createElement('div');
       gWrap.style.cssText='display:flex;gap:6px;flex-basis:100%';
       const gIn=document.createElement('input'); gIn.type='text'; gIn.placeholder='grupo (ex: Braço esquerdo)';
@@ -2009,6 +2069,27 @@ function ui(){
         const n=document.createElement('div');
         n.style.cssText='font-size:11px;color:#8b8d98;margin-top:2px';
         n.textContent='força: escala do solver, não N·m'; rb.appendChild(n);
+      }
+      // amortecedor com mola ativa: edita a mola AQUI mesmo, na junta do amortecedor
+      if(selLink.amortecedor && selLink.molaLink){
+        const ml=selLink.molaLink;
+        const t3=document.createElement('div');
+        t3.style.cssText='font-size:11px;letter-spacing:.08em;color:#8b8d98;margin:8px 0 2px';
+        t3.textContent='MOLA'; rb.appendChild(t3);
+        slider(rb,'rigidez',5,600,5,ml.mola.stiff,v=>v.toFixed(0),
+          function(v){ ml.mola.stiff=v; ml.c.stiffness=v; });
+        slider(rb,'amortec.',0,30,0.5,ml.mola.damp,v=>v.toFixed(1),
+          function(v){ ml.mola.damp=v; ml.c.damping=v; });
+        slider(rb,'repouso',0.02,1.2,0.005,ml.mola.rest,v=>v.toFixed(3)+' m',
+          function(v){ ml.mola.rest=v; ml.c.restLength=v; });
+        const bmed=document.createElement('button');
+        bmed.textContent='Medir repouso agora'; bmed.style.marginTop='6px';
+        bmed.title='usa a distância atual entre as peças como comprimento de repouso';
+        bmed.onclick=function(){
+          const d=selLink.pa.body.position.distanceTo(selLink.pb.body.position);
+          ml.mola.rest=d; ml.c.restLength=d; ui();
+        };
+        rb.appendChild(bmed);
       }
     }
     verPrevia(); verMotores(); return;
@@ -2425,6 +2506,68 @@ function montarMaoRobotica(){
 // preset: corda de N elos com juntas esf\u00e9ricas.
 // A junta 'ball' s\u00f3 injeta a equa\u00e7\u00e3o de motor em enableMotor(), ent\u00e3o por
 // padr\u00e3o \u00e9 PointToPoint puro -> a corda fica de fato mole.
+// preset: AMORTECEDOR — tubo externo + haste interna ligados por TRILHO, ou seja,
+// a haste só desliza no eixo, igual a um amortecedor de verdade. A mola NÃO vem
+// junto de propósito: você posiciona/prende as duas pontas primeiro e depois
+// aperta "Ativar mola" na junta, aí o comprimento de repouso é medido sozinho da
+// posição real — que era exatamente a parte chata de acertar na mão.
+function montarAmortecedor(){
+  snapshot();
+  const Y=0.35;
+  const compHaste=0.24, raioHaste=0.013;
+  const compTubo=0.15,  raioTubo=0.030;
+  const haste=addPart('eixo', new CANNON.Vec3(0,Y,0));
+  haste.par.comp=compHaste; haste.par.raio=raioHaste; rebuild(haste);
+  const tubo=addPart('eixo', new CANNON.Vec3(compTubo*0.42,Y,0));
+  tubo.par.comp=compTubo; tubo.par.raio=raioTubo; rebuild(tubo);
+  [haste,tubo].forEach(function(p){ p.home=p.body.position.clone(); p.hq=p.body.quaternion.clone(); });
+  // trilho: a HASTE é o trilho (mesma convenção do join()), o tubo corre nela
+  const P=new THREE.Vector3(tubo.body.position.x,tubo.body.position.y,tubo.body.position.z);
+  const dir=eixoDaPeca(haste);
+  const r=montarLigacao(haste,tubo,'trilho',P,dir);
+  ligAdd(r.c,'trilho'); politicaColisao(r.c,'trilho',haste,tubo);
+  const mk=mkMarcador('trilho',false); scene.add(mk);
+  const mkB=new THREE.Mesh(new THREE.SphereGeometry(MKE*0.010,10,8),
+    new THREE.MeshBasicMaterial({color:0xd9a04a})); scene.add(mkB);
+  links.push({c:r.c,kind:'trilho',a:haste.id,b:tubo.id,pa:haste,pb:tubo,mk:mk,mkB:mkB,
+    pivA:r.pa,pivB:r.pb,axL:r.axL,pivW:P.clone(),curso:compHaste*0.8,
+    axAz:angDeDir(dir).az, axEl:angDeDir(dir).el, amortecedor:true,
+    motor:{on:false,vel:0,mag:3,forca:30,ativo:false}});
+  sel=[]; selLink=null; recalcularVetos(); verTudo(); paint(); ui(); sync();
+}
+// Cria a mola de um amortecedor JÁ POSICIONADO: mede o comprimento de repouso da
+// distância atual entre as duas peças, então não há nada pra acertar na mão.
+function ativarMolaAmortecedor(l){
+  if(!l || l.molaLink) return;
+  snapshot();
+  const a=l.pa, b=l.pb;
+  const rest=a.body.position.distanceTo(b.body.position);
+  const rr=montarLigacao(a,b,'mola',new THREE.Vector3(0,0,0),new THREE.Vector3(1,0,0),
+    {rest:rest,stiff:120,damp:6});
+  ligAdd(rr.c,'mola');
+  const novo={c:rr.c,kind:'mola',a:a.id,b:b.id,pa:a,pb:b,mk:null,mkB:null,
+    pivA:rr.pa,pivB:rr.pb,axL:null,pivW:new THREE.Vector3(0,0,0),curso:cursoDa(a),
+    axAz:0,axEl:0,mola:{stiff:120,damp:6,rest:rest},doAmortecedor:true,
+    motor:{on:false,vel:0,mag:3,forca:30,ativo:false}};
+  // marcador de mola (a bobina que desenha entre as duas peças)
+  novo.mk=mkMarcador('mola',false); scene.add(novo.mk);
+  novo.mkB=new THREE.Mesh(new THREE.SphereGeometry(MKE*0.010,10,8),
+    new THREE.MeshBasicMaterial({color:0xd9a04a})); scene.add(novo.mkB);
+  links.push(novo);
+  l.molaLink=novo;
+  paint(); ui(); sync();
+}
+function removerMolaAmortecedor(l){
+  if(!l || !l.molaLink) return;
+  snapshot();
+  const m=l.molaLink;
+  ligRemove(m.c,'mola');
+  if(m.mk) scene.remove(m.mk);
+  if(m.mkB) scene.remove(m.mkB);
+  links=links.filter(x=>x!==m);
+  l.molaLink=null;
+  paint(); ui(); sync();
+}
 function montarCorda(){
   snapshot();
   const N=16, L=0.035, r=0.007, H=0.85, x0=-N*L/2;
@@ -2562,6 +2705,7 @@ window.B={
     try{ gravarPeca(p,nome); document.getElementById('gravarForm').style.display='none'; }
     catch(e){ shout('gravar: '+e.message); }
   },
+  amortecedor:function(){ try{ montarAmortecedor(); }catch(e){ shout('amortecedor: '+e.message); } },
   maoRobotica:function(){ try{ montarMaoRobotica(); }catch(e){ shout('mão robótica: '+e.message); } },
   togglePecas:function(){
     const p=document.getElementById('painelPecas');
@@ -2574,12 +2718,21 @@ window.B={
   },
   play:function(){ running=!running; document.getElementById('playBtn').textContent=running?'\u275a\u275a':'\u25b6';
     const p2=document.getElementById('playBtn2'); if(p2) p2.textContent=running?'\u275a\u275a':'\u25b6';
-    if(running) parts.forEach(p=>{p.home=p.body.position.clone();p.hq=p.body.quaternion.clone();});
+    // Só grava a pose de montagem se a física AINDA NÃO mexeu desde a última
+    // edição/reinício. Antes gravava a cada play: apertar Testar de novo (ou tocar
+    // num motor, que dá play sozinho) congelava a peça já deformada como se fosse a
+    // montagem original — e aí o Reiniciar "remontava errado" e o trabalho sumia.
+    if(running && !poseSuja) parts.forEach(p=>{p.home=p.body.position.clone();p.hq=p.body.quaternion.clone();});
     paint(); },
   reset:function(){ running=false; document.getElementById('playBtn').textContent='\u25b6';
     const p2=document.getElementById('playBtn2'); if(p2) p2.textContent='\u25b6';
     parts.forEach(p=>{p.body.position.copy(p.home);p.body.quaternion.copy(p.hq);
-      p.body.velocity.set(0,0,0);p.body.angularVelocity.set(0,0,0);}); sync(); paint(); },
+      p.body.velocity.set(0,0,0);p.body.angularVelocity.set(0,0,0);});
+    // para os motores junto: senão o Reiniciar recoloca as peças no lugar mas elas
+    // saem andando de novo na hora, porque o motor continuava comandado
+    links.forEach(function(l){ if(l.motor && l.motor.ativo) comandar(l,0); });
+    poseSuja=false;   // voltamos à pose de montagem: pode gravar de novo no próximo play
+    sync(); paint(); },
   clear:function(){ if(parts.length) snapshot();
     running=false; document.getElementById('playBtn').textContent='\u25b6';
     const p2=document.getElementById('playBtn2'); if(p2) p2.textContent='\u25b6';
@@ -2625,6 +2778,7 @@ window.B={
 (function loop(){ requestAnimationFrame(loop);
   if(running){
     for(let sp=0; sp<4; sp++){ molas.forEach(function(m){ m.applyForce(); }); world.step(1/240); }
+    poseSuja=true;   // a física já mexeu: a pose atual NÃO é mais a pose de montagem
     limitarTrilhos(); sync(); }
   if(seguindo){ orb.t.lerp(new THREE.Vector3(seguindo.body.position.x,
       seguindo.body.position.y, seguindo.body.position.z), 0.18); placeCam(); }
