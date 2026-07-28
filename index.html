@@ -2733,10 +2733,28 @@ window.B={
     links.forEach(function(l){ if(l.motor && l.motor.ativo) comandar(l,0); });
     poseSuja=false;   // voltamos à pose de montagem: pode gravar de novo no próximo play
     sync(); paint(); },
-  clear:function(){ if(parts.length) snapshot();
-    running=false; document.getElementById('playBtn').textContent='\u25b6';
+  clear:function(){
+    // Limpar tem que funcionar SEMPRE, inclusive com a cena num estado quebrado —
+    // antes, se snapshot()/limparTudo() estourasse no meio, a cena continuava lá e
+    // não havia como se livrar dela (nem recarregando, porque o auto-save regravava).
+    running=false;
+    const b=document.getElementById('playBtn'); if(b) b.textContent='\u25b6';
     const p2=document.getElementById('playBtn2'); if(p2) p2.textContent='\u25b6';
-    limparTudo(); ui(); },
+    try{ if(parts.length) snapshot(); }catch(e){}
+    try{ limparTudo(); }catch(e){
+      // limpeza bruta: se algum vínculo estiver corrompido, descarta tudo na marra
+      try{ links.forEach(function(l){ try{ ligRemove(l.c,l.kind); }catch(e2){}
+        try{ if(l.mk)scene.remove(l.mk); if(l.mkB)scene.remove(l.mkB); }catch(e2){} }); }catch(e2){}
+      try{ parts.forEach(function(p){ try{ world.removeBody(p.body); scene.remove(p.mesh); }catch(e2){} }); }catch(e2){}
+      links=[]; parts=[]; molas=[]; sel=[]; selLink=null; seguindo=null;
+      pivotUser=null; pivotLivre=null;
+      try{ recalcularVetos(); }catch(e2){}
+    }
+    // apaga também a cena salva, senão ela volta na próxima abertura
+    try{ localStorage.removeItem('bancada:cena'); }catch(e){}
+    _ultimaCena=''; poseSuja=false; _errosLoop=0;
+    try{ paint(); }catch(e){}
+    ui(); },
   del:function(){
     const p=sel[0];
     if(!p){
@@ -2775,19 +2793,46 @@ window.B={
                            pivotUser:pivotUser,
                            setSel:function(a){ sel=a; paint(); ui(); }}; }
 };
+let _errosLoop=0;
 (function loop(){ requestAnimationFrame(loop);
-  if(running){
-    for(let sp=0; sp<4; sp++){ molas.forEach(function(m){ m.applyForce(); }); world.step(1/240); }
-    poseSuja=true;   // a física já mexeu: a pose atual NÃO é mais a pose de montagem
-    limitarTrilhos(); sync(); }
-  if(seguindo){ orb.t.lerp(new THREE.Vector3(seguindo.body.position.x,
-      seguindo.body.position.y, seguindo.body.position.z), 0.18); placeCam(); }
-  rend.render(scene,cam); })();
+  // O corpo do loop fica protegido de propósito: antes, UM erro em um único quadro
+  // derrubava o requestAnimationFrame pra sempre — a tela congelava, nada mais
+  // respondia e não havia como limpar nem sair. Agora avisa uma vez e continua.
+  try{
+    if(running){
+      for(let sp=0; sp<4; sp++){ molas.forEach(function(m){ m.applyForce(); }); world.step(1/240); }
+      poseSuja=true;   // a física já mexeu: a pose atual NÃO é mais a pose de montagem
+      limitarTrilhos(); sync(); }
+    if(seguindo){ orb.t.lerp(new THREE.Vector3(seguindo.body.position.x,
+        seguindo.body.position.y, seguindo.body.position.z), 0.18); placeCam(); }
+  }catch(e){
+    _errosLoop++;
+    if(_errosLoop===1) shout('erro na simulação: '+e.message+' — pausei; use Limpar se travar');
+    if(_errosLoop===1){ running=false;
+      const b=document.getElementById('playBtn'); if(b) b.textContent='\u25b6';
+      const b2=document.getElementById('playBtn2'); if(b2) b2.textContent='\u25b6'; }
+  }
+  try{ rend.render(scene,cam); }catch(e){}
+})();
 resize(); ui(); renderModelos(); atualizarBtDesfazer();
 try{
-  if(carregarDoHash()) avisar('máquina carregada do link!');
+  // SAÍDA DE EMERGÊNCIA: abrir com ?limpar (ou #limpar) descarta a cena salva e
+  // começa vazio. Serve pra quando uma cena salva quebrada trava o app e não dá
+  // pra apagar por dentro — sem isso, não há o que fazer a não ser limpar os
+  // dados do site pelo navegador.
+  if(/[?#]limpar/i.test(location.search+location.hash)){
+    try{ localStorage.removeItem('bancada:cena'); }catch(e){}
+    _ultimaCena='';
+    avisar('cena salva descartada — começando vazio');
+  }
+  else if(carregarDoHash()) avisar('máquina carregada do link!');
   else if(carregarCenaSalva()) avisar('sua última cena foi restaurada ✓ (salva automaticamente)');
-}catch(e){ shout('restaurar: '+e.message); }
+}catch(e){
+  // se a restauração falhar, NÃO deixa o app num estado meio-montado: zera tudo e
+  // descarta a cena salva, senão o mesmo erro volta a cada abertura
+  try{ limparTudo(); localStorage.removeItem('bancada:cena'); _ultimaCena=''; }catch(e2){}
+  ui(); shout('não consegui restaurar a cena salva; comecei vazio');
+}
 }catch(err){ shout('FALHA NA CARGA: '+err.message); }
 </script>
 
