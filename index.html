@@ -588,19 +588,21 @@ function build(tipo,par){
       new THREE.MeshLambertMaterial({color:0x9aa3b2}));
     h.rotation.z=Math.PI/2; g.add(h);
   } else if(tipo==='bracoA'){
-    // Braço em A de suspensão: 2 pontos internos (buchas no chassi) convergindo pra
-    // 1 ponto externo (rótula na manga de eixo) — corpo rígido ÚNICO, zero solda.
-    // Local: pivôs internos em (0,0,±base/2), rótula externa em (braco,0,0).
+    // Braco em A de suspensao: 2 pontos internos (buchas no chassi) convergindo pra
+    // 1 ponto externo (rotula na manga de eixo) - corpo rigido UNICO, zero solda.
+    // Escrito no referencial natural (pivos internos em (0,0,+-base/2), rotula em
+    // (braco,0,0)); a centragem do centro de massa e feita automaticamente no fim
+    // de build() pra todas as pecas - nao repetir aqui.
     const base=par.base, braco=par.braco, e=par.esp;
     [-1,1].forEach(function(s){
-      const pz=s*base/2, dx=braco, dz=-pz;               // vetor do pivô até a rótula
-      const L=Math.hypot(dx,dz), a=Math.atan2(-dz,dx);    // mesma convenção do 'arco'
+      const pz=s*base/2, dx=braco, dz=-pz;               // vetor do pivo ate a rotula
+      const L=Math.hypot(dx,dz), a=Math.atan2(-dz,dx);    // mesma convencao do 'arco'
       const mx=braco/2, mz=pz/2;
       const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(0,1,0),a);
       shapes.push({s:new CANNON.Box(new CANNON.Vec3(L/2,e/2,e/2)),o:new CANNON.Vec3(mx,0,mz),q:q});
       const m=new THREE.Mesh(new THREE.BoxGeometry(L,e,e),mat);
       m.position.set(mx,0,mz); m.rotation.y=a; g.add(m);
-      // bucha (só estética — ajuda a enxergar onde a junta com o chassi deve entrar)
+      // bucha (so estetica - ajuda a enxergar onde a junta com o chassi deve entrar)
       const bch=new THREE.Mesh(new THREE.CylinderGeometry(e*0.55,e*0.55,e*1.3,12),
         new THREE.MeshLambertMaterial({color:0x5a6170}));
       bch.rotation.x=Math.PI/2; bch.position.set(0,0,pz); g.add(bch);
@@ -654,65 +656,49 @@ function build(tipo,par){
       v.position.set(p[0],p[1],p[2]); g.add(v);
     });
   }
-  return {shapes,mesh:g};
-}
-// Cannon soma a inércia de cada shape de um corpo composto SEM girar essa
-// inércia local pelo quaternion do próprio shape antes de somar — só desloca pela
-// posição (eixo paralelo). Pra shapes SEM rotação (cubo, manga, tudo mais) não faz
-// diferença nenhuma. Pro braço em A, cujos 2 braços são rotacionados em ângulos
-// diferentes, o resultado sai errado — travando (ou deixando artificialmente
-// rígido) o giro num eixo. Confirmei numericamente fora do navegador: a diferença
-// chega a ~8x no eixo que devia girar livre. Esta função recalcula certo.
-function inerciaComposta(shapes,massaTotal){
-  function vol(x){
-    if(x.s && x.s.halfExtents){ const he=x.s.halfExtents; return 8*he.x*he.y*he.z; }
-    if(x.s && typeof x.s.radius==='number'){ return (4/3)*Math.PI*Math.pow(x.s.radius,3); }
-    return 0.001;
-  }
-  let volTotal=0; const vols=shapes.map(function(x){ const v=vol(x); volTotal+=v; return v; });
-  if(volTotal<=0) return null;
-  function matMul(A,B){ const C=[[0,0,0],[0,0,0],[0,0,0]];
-    for(let r=0;r<3;r++)for(let c=0;c<3;c++){ let s=0; for(let k=0;k<3;k++) s+=A[r][k]*B[k][c]; C[r][c]=s; }
-    return C; }
-  function transpose(A){ return [[A[0][0],A[1][0],A[2][0]],[A[0][1],A[1][1],A[2][1]],[A[0][2],A[1][2],A[2][2]]]; }
-  let Ixx=0,Iyy=0,Izz=0;
-  shapes.forEach(function(x,i){
-    const m=massaTotal*(vols[i]/volTotal);
-    let Ilx,Ily,Ilz;
-    if(x.s && x.s.halfExtents){ const he=x.s.halfExtents, lx=he.x*2,ly=he.y*2,lz=he.z*2;
-      Ilx=m/12*(ly*ly+lz*lz); Ily=m/12*(lx*lx+lz*lz); Ilz=m/12*(lx*lx+ly*ly);
-    } else if(x.s && typeof x.s.radius==='number'){ const I=(2/5)*m*x.s.radius*x.s.radius; Ilx=Ily=Ilz=I;
-    } else { Ilx=Ily=Ilz=m*0.0001; }
-    const q=x.q||{x:0,y:0,z:0,w:1};
-    const R=[
-      [1-2*(q.y*q.y+q.z*q.z), 2*(q.x*q.y-q.z*q.w),   2*(q.x*q.z+q.y*q.w)],
-      [2*(q.x*q.y+q.z*q.w),   1-2*(q.x*q.x+q.z*q.z), 2*(q.y*q.z-q.x*q.w)],
-      [2*(q.x*q.z-q.y*q.w),   2*(q.y*q.z+q.x*q.w),   1-2*(q.x*q.x+q.y*q.y)]
-    ];
-    const Iw=matMul(matMul(R,[[Ilx,0,0],[0,Ily,0],[0,0,Ilz]]),transpose(R));
-    const o=x.o||{x:0,y:0,z:0}, dx=o.x,dy=o.y,dz=o.z, d2=dx*dx+dy*dy+dz*dz;
-    Ixx += Iw[0][0] + m*(d2-dx*dx);
-    Iyy += Iw[1][1] + m*(d2-dy*dy);
-    Izz += Iw[2][2] + m*(d2-dz*dz);
+  // ---- CENTRAGEM AUTOMÁTICA DO CENTRO DE MASSA ----
+  // O cannon.js assume que a ORIGEM do corpo É o centro de massa: ele nunca calcula
+  // o centro de massa a partir dos offsets das sub-formas. Se a massa da peça estiver
+  // deslocada da origem (semicírculo, came, cônica...), o cannon aplica a gravidade
+  // no lugar errado — e se a junta cair justamente nesse ponto, o braço de alavanca
+  // vira zero e a peça NUNCA cai sozinha (o motor ainda a move, porque motor impõe
+  // rotação e ignora isso). Verificado rodando o cannon 0.6.2 de verdade fora do
+  // navegador. Aqui deslocamos formas E malhas pelo centroide, o que resolve pra
+  // qualquer peça — inclusive as que forem criadas no futuro.
+  let _vt=0,_cx=0,_cy=0,_cz=0;
+  shapes.forEach(function(x){
+    const he=x.s.halfExtents;
+    const v = he ? 8*he.x*he.y*he.z
+            : (typeof x.s.radius==='number' ? (4/3)*Math.PI*Math.pow(x.s.radius,3) : 0);
+    if(v<=0) return;
+    const o=x.o||new CANNON.Vec3();
+    _vt+=v; _cx+=v*o.x; _cy+=v*o.y; _cz+=v*o.z;
   });
-  // Cannon só guarda a diagonal (assume eixo local = eixo principal) — uso a
-  // diagonal do tensor certo como aproximação; ignora os termos cruzados, o que é
-  // imperfeito pra formas bem assimétricas mas muito melhor que não girar nada.
-  return new CANNON.Vec3(Math.max(Ixx,1e-9),Math.max(Iyy,1e-9),Math.max(Izz,1e-9));
+  let com={x:0,y:0,z:0};
+  if(_vt>0){
+    com={x:_cx/_vt,y:_cy/_vt,z:_cz/_vt};
+    if(Math.hypot(com.x,com.y,com.z)>1e-6){
+      shapes.forEach(function(x){
+        if(!x.o) x.o=new CANNON.Vec3();
+        x.o.x-=com.x; x.o.y-=com.y; x.o.z-=com.z;
+      });
+      g.children.forEach(function(m){
+        m.position.set(m.position.x-com.x, m.position.y-com.y, m.position.z-com.z);
+      });
+    } else { com={x:0,y:0,z:0}; }
+  }
+  return {shapes,mesh:g,com:com};
 }
 function aplicar(p,shapes){
   p.body.shapes.length=0; p.body.shapeOffsets.length=0; p.body.shapeOrientations.length=0;
   shapes.forEach(x=>p.body.addShape(x.s,x.o,x.q));
+  // NOTA: cannon.js 0.6.2 aproxima a inércia de QUALQUER corpo pela caixa da AABB
+  // (Body.updateMassProperties -> Box.calculateInertia com as meias-extensões da
+  // AABB) — ele nem olha as sub-formas. Já tentei substituir isso por um cálculo
+  // "correto" somando as sub-formas: o resultado ficou ~4x maior no eixo de giro do
+  // braço em A, deixando-o pesado demais pra gravidade mover (o motor ainda movia,
+  // porque motor impõe velocidade e ignora inércia). Revertido de propósito.
   p.body.updateMassProperties();
-  const temRotacao=shapes.some(function(x){ const q=x.q; return q && !(q.x===0&&q.y===0&&q.z===0&&q.w===1); });
-  if(temRotacao && p.body.mass>0 && p.body.inertia && p.body.invInertia){
-    const I=inerciaComposta(shapes,p.body.mass);
-    if(I){
-      p.body.inertia.copy?p.body.inertia.copy(I):(p.body.inertia.x=I.x,p.body.inertia.y=I.y,p.body.inertia.z=I.z);
-      p.body.invInertia.set(I.x>0?1/I.x:0, I.y>0?1/I.y:0, I.z>0?1/I.z:0);
-      if(p.body.updateInertiaWorld) p.body.updateInertiaWorld(true);
-    }
-  }
   if(p.body.updateBoundingRadius) p.body.updateBoundingRadius();
   p.body.aabbNeedsUpdate=true;
 }
@@ -774,12 +760,13 @@ function addPart(tipo,pos){
   body.position.copy(pos||new CANNON.Vec3((Math.random()-0.5)*0.2,0.5,(Math.random()-0.5)*0.2));
   body.collisionFilterGroup=2; body.collisionFilterMask=-1;
   world.addBody(body); scene.add(r.mesh);
-  const p={id:++nId,tipo,par,rot:{x:0,y:0,z:0},asm:null,body,mesh:r.mesh,
+  const p={id:++nId,tipo,par,rot:{x:0,y:0,z:0},asm:null,body,mesh:r.mesh,com:r.com,
            home:body.position.clone(),hq:body.quaternion.clone()};
   parts.push(p); sel=[p]; paint(); ui(); sync(); return p;
 }
 function rebuild(p){
   const r=build(p.tipo,p.par);
+  p.com=r.com;
   scene.remove(p.mesh); p.mesh=r.mesh; scene.add(r.mesh);
   aplicar(p,r.shapes); paint(); sync();
 }
@@ -1431,7 +1418,12 @@ function porMarcador(g, kind, pos, axis){
 // os "lugares adequados": geometria notável de cada peça
 function pontosLocais(p){
   const q=p.par, L=[];
-  const add=(x,y,z,nome)=>L.push({v:new THREE.Vector3(x,y,z),n:nome});
+  // build() pode ter deslocado a geometria pra pôr o centro de massa na origem
+  // (ver comentário lá). As fórmulas abaixo são escritas no referencial ORIGINAL
+  // da peça, então descontamos o mesmo deslocamento aqui — assim os pontos de
+  // encaixe continuam grudados na geometria de verdade.
+  const cm=p.com||{x:0,y:0,z:0};
+  const add=(x,y,z,nome)=>L.push({v:new THREE.Vector3(x-cm.x,y-cm.y,z-cm.z),n:nome});
   add(0,0,0,'centro');
   if(p.tipo==='barra'){
     add(q.comp/2,0,0,'ponta'); add(-q.comp/2,0,0,'ponta');
