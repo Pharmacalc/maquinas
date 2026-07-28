@@ -51,6 +51,19 @@
     <button class="zb" id="btEnc" onclick="B.encaixe()" title="encaixe assistido no eixo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v9a5 5 0 0 0 10 0V3"/><path d="M4 3h6M14 3h6"/></svg></button>
   </div>
 
+  <div id="acoesRow" style="display:none;padding:0 12px 9px;gap:6px;flex-wrap:wrap;background:#1a1b20">
+    <span id="acoesPeca" style="display:contents">
+    <button onclick="B.centrar()">Centrar</button>
+    <button id="btDup" onclick="B.dup()">Duplicar</button>
+    </span>
+    <button onclick="B.del()">Remover</button>
+    <button onclick="B.desel()">Soltar</button>
+    <span id="acoesPeca2" style="display:contents">
+    <button id="btGravar" onclick="B.toggleGravar()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21 12 16.5 6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/></svg>Gravar</button>
+    <button id="btFixar" onclick="B.fixar()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.6"/><line x1="12" y1="21" x2="12" y2="8"/><path d="M6 11H3a9 9 0 0 0 18 0h-3"/></svg>Fixar</button>
+    </span>
+  </div>
+
   <div id="painel" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain">
   <div id="painelMotores" style="padding:8px 12px;display:none;background:#1a2318;border-bottom:1px solid #2c2d34">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
@@ -76,18 +89,6 @@
     <div id="params"></div>
     <div style="font-size:11px;letter-spacing:.08em;color:#8b8d98;margin:8px 0 2px">GIRO</div>
     <div id="rots"></div>
-    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-      <span id="acoesPeca" style="display:contents">
-      <button onclick="B.centrar()">Centrar</button>
-      <button id="btDup" onclick="B.dup()">Duplicar</button>
-      </span>
-      <button onclick="B.del()">Remover</button>
-      <button onclick="B.desel()">Soltar</button>
-      <span id="acoesPeca2" style="display:contents">
-      <button id="btGravar" onclick="B.toggleGravar()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21 12 16.5 6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/></svg>Gravar</button>
-      <button id="btFixar" onclick="B.fixar()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.6"/><line x1="12" y1="21" x2="12" y2="8"/><path d="M6 11H3a9 9 0 0 0 18 0h-3"/></svg>Fixar</button>
-      </span>
-    </div>
     <div id="gravarForm" style="display:none;margin-top:8px;gap:6px">
       <input id="gravarNome" type="text" placeholder="nome da peça" style="flex:1;min-width:0;background:#1e1f26;color:#e8e8ea;border:1px solid #383941;border-radius:7px;padding:7px 9px;font-size:13px">
       <button onclick="B.confirmarGravar()">Salvar</button>
@@ -1905,6 +1906,7 @@ function ui(){
   const bar=document.getElementById('bar'); bar.innerHTML='';
   const one=sel.length===1?sel[0]:null;
   document.getElementById('editor').style.display=(one||selLink)?'block':'none';
+  const ar=document.getElementById('acoesRow'); if(ar) ar.style.display=(one||selLink)?'flex':'none';
   const apc=document.getElementById('acoesPeca'), apc2=document.getElementById('acoesPeca2');
   if(apc) apc.style.display=one?'contents':'none';
   if(apc2) apc2.style.display=one?'contents':'none';
