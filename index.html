@@ -651,10 +651,63 @@ function build(tipo,par){
   }
   return {shapes,mesh:g};
 }
+// Cannon soma a inércia de cada shape de um corpo composto SEM girar essa
+// inércia local pelo quaternion do próprio shape antes de somar — só desloca pela
+// posição (eixo paralelo). Pra shapes SEM rotação (cubo, manga, tudo mais) não faz
+// diferença nenhuma. Pro braço em A, cujos 2 braços são rotacionados em ângulos
+// diferentes, o resultado sai errado — travando (ou deixando artificialmente
+// rígido) o giro num eixo. Confirmei numericamente fora do navegador: a diferença
+// chega a ~8x no eixo que devia girar livre. Esta função recalcula certo.
+function inerciaComposta(shapes,massaTotal){
+  function vol(x){
+    if(x.s && x.s.halfExtents){ const he=x.s.halfExtents; return 8*he.x*he.y*he.z; }
+    if(x.s && typeof x.s.radius==='number'){ return (4/3)*Math.PI*Math.pow(x.s.radius,3); }
+    return 0.001;
+  }
+  let volTotal=0; const vols=shapes.map(function(x){ const v=vol(x); volTotal+=v; return v; });
+  if(volTotal<=0) return null;
+  function matMul(A,B){ const C=[[0,0,0],[0,0,0],[0,0,0]];
+    for(let r=0;r<3;r++)for(let c=0;c<3;c++){ let s=0; for(let k=0;k<3;k++) s+=A[r][k]*B[k][c]; C[r][c]=s; }
+    return C; }
+  function transpose(A){ return [[A[0][0],A[1][0],A[2][0]],[A[0][1],A[1][1],A[2][1]],[A[0][2],A[1][2],A[2][2]]]; }
+  let Ixx=0,Iyy=0,Izz=0;
+  shapes.forEach(function(x,i){
+    const m=massaTotal*(vols[i]/volTotal);
+    let Ilx,Ily,Ilz;
+    if(x.s && x.s.halfExtents){ const he=x.s.halfExtents, lx=he.x*2,ly=he.y*2,lz=he.z*2;
+      Ilx=m/12*(ly*ly+lz*lz); Ily=m/12*(lx*lx+lz*lz); Ilz=m/12*(lx*lx+ly*ly);
+    } else if(x.s && typeof x.s.radius==='number'){ const I=(2/5)*m*x.s.radius*x.s.radius; Ilx=Ily=Ilz=I;
+    } else { Ilx=Ily=Ilz=m*0.0001; }
+    const q=x.q||{x:0,y:0,z:0,w:1};
+    const R=[
+      [1-2*(q.y*q.y+q.z*q.z), 2*(q.x*q.y-q.z*q.w),   2*(q.x*q.z+q.y*q.w)],
+      [2*(q.x*q.y+q.z*q.w),   1-2*(q.x*q.x+q.z*q.z), 2*(q.y*q.z-q.x*q.w)],
+      [2*(q.x*q.z-q.y*q.w),   2*(q.y*q.z+q.x*q.w),   1-2*(q.x*q.x+q.y*q.y)]
+    ];
+    const Iw=matMul(matMul(R,[[Ilx,0,0],[0,Ily,0],[0,0,Ilz]]),transpose(R));
+    const o=x.o||{x:0,y:0,z:0}, dx=o.x,dy=o.y,dz=o.z, d2=dx*dx+dy*dy+dz*dz;
+    Ixx += Iw[0][0] + m*(d2-dx*dx);
+    Iyy += Iw[1][1] + m*(d2-dy*dy);
+    Izz += Iw[2][2] + m*(d2-dz*dz);
+  });
+  // Cannon só guarda a diagonal (assume eixo local = eixo principal) — uso a
+  // diagonal do tensor certo como aproximação; ignora os termos cruzados, o que é
+  // imperfeito pra formas bem assimétricas mas muito melhor que não girar nada.
+  return new CANNON.Vec3(Math.max(Ixx,1e-9),Math.max(Iyy,1e-9),Math.max(Izz,1e-9));
+}
 function aplicar(p,shapes){
   p.body.shapes.length=0; p.body.shapeOffsets.length=0; p.body.shapeOrientations.length=0;
   shapes.forEach(x=>p.body.addShape(x.s,x.o,x.q));
   p.body.updateMassProperties();
+  const temRotacao=shapes.some(function(x){ const q=x.q; return q && !(q.x===0&&q.y===0&&q.z===0&&q.w===1); });
+  if(temRotacao && p.body.mass>0 && p.body.inertia && p.body.invInertia){
+    const I=inerciaComposta(shapes,p.body.mass);
+    if(I){
+      p.body.inertia.copy?p.body.inertia.copy(I):(p.body.inertia.x=I.x,p.body.inertia.y=I.y,p.body.inertia.z=I.z);
+      p.body.invInertia.set(I.x>0?1/I.x:0, I.y>0?1/I.y:0, I.z>0?1/I.z:0);
+      if(p.body.updateInertiaWorld) p.body.updateInertiaWorld(true);
+    }
+  }
   if(p.body.updateBoundingRadius) p.body.updateBoundingRadius();
   p.body.aabbNeedsUpdate=true;
 }
@@ -1290,7 +1343,14 @@ function angDeDir(d){
 }
 // eixo próprio de uma peça (X local) em coordenadas do mundo
 function eixoDaPeca(p){
-  const q=p.body.quaternion, v=q.vmult(new CANNON.Vec3(1,0,0));
+  const q=p.body.quaternion;
+  // a maioria das peças tem o eixo "natural" ao longo do X local (barra, eixo...)
+  // — mas o braço em A tem o eixo longitudinal DE VERDADE (a linha entre os 2
+  // pivôs da base, por onde ele deveria girar como um braço de suspensão real) no
+  // Z local, não no X (que aponta pra ponta/ápice). Sem isso, "alinhar com peça"
+  // dava um eixo perpendicular ao que fazia sentido, e o braço não angulava certo.
+  const eixoLocal = (p.tipo==='bracoA') ? new CANNON.Vec3(0,0,1) : new CANNON.Vec3(1,0,0);
+  const v=q.vmult(eixoLocal);
   return new THREE.Vector3(v.x,v.y,v.z).normalize();
 }
 let novoAz=90, novoEl=0;   // padrão = eixo Z
