@@ -274,7 +274,7 @@ const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8
 const CAT={
   barra:{nome:'Barra reta',p:{comp:{r:[0.02,1.2],v:0.5,u:'m'},esp:{r:[0.005,0.06],v:0.025,u:'m'}}},
   arco:{nome:'Semicirculo',p:{raio:{r:[0.04,0.6],v:0.25,u:'m'},arco:{r:[20,360],v:180,u:'\u00b0'},esp:{r:[0.005,0.05],v:0.02,u:'m'}}},
-  placa:{nome:'Placa',p:{larg:{r:[0.05,0.9],v:0.35,u:'m'},prof:{r:[0.05,0.9],v:0.22,u:'m'},esp:{r:[0.004,0.05],v:0.012,u:'m'}}},
+  placa:{nome:'Placa',p:{larg:{r:[0.05,0.9],v:0.35,u:'m'},prof:{r:[0.05,0.9],v:0.22,u:'m'},largTopo:{r:[0,0.9],v:0.35,u:'m'},deslocX:{r:[-0.45,0.45],v:0,u:'m'},esp:{r:[0.004,0.05],v:0.012,u:'m'}}},
   roda:{nome:'Roda',p:{raio:{r:[0.03,0.25],v:0.09,u:'m'},larg:{r:[0.01,0.1],v:0.035,u:'m'}}},
   dentada:{nome:'Roda dentada',p:{raio:{r:[0.04,0.25],v:0.09,u:'m'},dentes:{r:[6,24],v:12,u:''},esp:{r:[0.01,0.06],v:0.03,u:'m'},raios:{r:[0,6],v:0,u:''}}},
   coroa:{nome:'Coroa (dentes laterais)',p:{raio:{r:[0.04,0.25],v:0.09,u:'m'},dentes:{r:[6,24],v:12,u:''},esp:{r:[0.008,0.04],v:0.015,u:'m'}}},
@@ -369,8 +369,28 @@ function build(tipo,par){
     shapes.push({s:new CANNON.Box(new CANNON.Vec3(par.comp/2,e/2,e/2)),o:new CANNON.Vec3()});
     g.add(new THREE.Mesh(new THREE.BoxGeometry(par.comp,e,e),mat));
   } else if(tipo==='placa'){
-    shapes.push({s:new CANNON.Box(new CANNON.Vec3(par.larg/2,par.esp/2,par.prof/2)),o:new CANNON.Vec3()});
-    g.add(new THREE.Mesh(new THREE.BoxGeometry(par.larg,par.esp,par.prof),mat));
+    // Trapézio (base != topo, com deslocamento lateral opcional). largTopo=larg e
+    // deslocX=0 reduz exatamente ao retângulo de sempre. largTopo=0 degenera num
+    // ápice único = TRIÂNGULO, sem precisar de peça própria pra isso.
+    // Validado headless (three r128 + cannon 0.6.2, mesmas versões do CDN):
+    // bounding, normais e física de queda conferidas nos 4 casos (retângulo,
+    // trapézio, triângulo, triângulo com CoM descentrado) antes de subir aqui.
+    const larg=par.larg, prof=par.prof, lt=(par.largTopo!==undefined?par.largTopo:par.larg),
+          dx=par.deslocX||0, e=par.esp;
+    const P0={x:-larg/2,z:-prof/2}, P1={x:larg/2,z:-prof/2},
+          P2={x:dx+lt/2,z:prof/2}, P3={x:dx-lt/2,z:prof/2};
+    const minX=Math.min(P0.x,P1.x,P2.x,P3.x), maxX=Math.max(P0.x,P1.x,P2.x,P3.x);
+    const minZ=Math.min(P0.z,P1.z,P2.z,P3.z), maxZ=Math.max(P0.z,P1.z,P2.z,P3.z);
+    const cx=(minX+maxX)/2, cz=(minZ+maxZ)/2, hx=(maxX-minX)/2, hz=(maxZ-minZ)/2;
+    // colisão: bounding box (mesmo truque do 'manga'/'roda' — nunca ConvexPolyhedron
+    // aqui, é o bug de normal invertida já documentado abaixo em 'manga')
+    shapes.push({s:new CANNON.Box(new CANNON.Vec3(hx,e/2,hz)),o:new CANNON.Vec3(cx,0,cz)});
+    // visual: shape real (fecha sozinho em triângulo quando P2==P3)
+    const shp=new THREE.Shape();
+    shp.moveTo(P0.x,P0.z); shp.lineTo(P1.x,P1.z); shp.lineTo(P2.x,P2.z); shp.lineTo(P3.x,P3.z); shp.closePath();
+    const geo=new THREE.ExtrudeGeometry(shp,{depth:e,bevelEnabled:false});
+    geo.translate(0,0,-e/2); geo.rotateX(-Math.PI/2);
+    g.add(new THREE.Mesh(geo,mat));
   } else if(tipo==='arco'){
     const n=Math.max(4,Math.round(par.arco/15)), tot=par.arco*Math.PI/180;
     const seg=2*par.raio*Math.sin(tot/(2*n)), e=par.esp;
@@ -892,7 +912,7 @@ function limitarTrilhos(){
 function cursoDa(p){
   if(p.tipo==='barra') return p.par.comp;
   if(p.tipo==='eixo') return p.par.comp;
-  if(p.tipo==='placa') return Math.max(p.par.larg,p.par.prof);
+  if(p.tipo==='placa') return Math.max(p.par.larg,(p.par.largTopo!==undefined?p.par.largTopo:p.par.larg));
   if(p.tipo==='arco') return p.par.raio*2;
   if(p.tipo==='bracoA') return p.par.braco*2;
   if(p.tipo==='cubo') return Math.max(p.par.compX,p.par.compY,p.par.compZ,p.par.compXtopo,p.par.compZtopo);
@@ -1469,9 +1489,14 @@ function pontosLocais(p){
     add(q.comp/2,0,0,'ponta'); add(-q.comp/2,0,0,'ponta');
     add(q.comp/4,0,0,'1/4'); add(-q.comp/4,0,0,'1/4');
   } else if(p.tipo==='placa'){
-    [-1,1].forEach(sx=>[-1,1].forEach(sz=>add(sx*q.larg/2,0,sz*q.prof/2,'canto')));
-    add(q.larg/2,0,0,'meio aresta'); add(-q.larg/2,0,0,'meio aresta');
-    add(0,0,q.prof/2,'meio aresta'); add(0,0,-q.prof/2,'meio aresta');
+    const lt=(q.largTopo!==undefined?q.largTopo:q.larg), dx=q.deslocX||0;
+    const P0={x:-q.larg/2,z:-q.prof/2}, P1={x:q.larg/2,z:-q.prof/2},
+          P2={x:dx+lt/2,z:q.prof/2}, P3={x:dx-lt/2,z:q.prof/2};
+    [P0,P1,P2,P3].forEach(function(P){ add(P.x,0,P.z,'canto'); });
+    add((P0.x+P1.x)/2,0,(P0.z+P1.z)/2,'meio aresta');
+    add((P1.x+P2.x)/2,0,(P1.z+P2.z)/2,'meio aresta');
+    add((P2.x+P3.x)/2,0,(P2.z+P3.z)/2,'meio aresta');
+    add((P3.x+P0.x)/2,0,(P3.z+P0.z)/2,'meio aresta');
     add(0,q.esp/2,0,'face'); add(0,-q.esp/2,0,'face');
   } else if(p.tipo==='roda'){
     add(q.larg/2,0,0,'eixo'); add(-q.larg/2,0,0,'eixo');
@@ -2437,7 +2462,10 @@ function montarNudge(){
   vg.appendChild(up); vg.appendChild(dn); box.appendChild(vg);
 }
 function area(p){ const t=document.getElementById('areaTxt');
-  if(t) t.textContent='\u00e1rea = '+(p.par.larg*p.par.prof).toFixed(3)+' m\u00b2'; }
+  // área do trapézio: (base+topo)/2 * altura — deslocX não muda a área, só a inclinação
+  const lt=(p.par.largTopo!==undefined?p.par.largTopo:p.par.larg);
+  const a=(p.par.larg+lt)/2*p.par.prof;
+  if(t) t.textContent='\u00e1rea = '+a.toFixed(3)+' m\u00b2'; }
 
 // preset: mão robótica — palma + 4 dedos (3 falanges c/ dobradiça motorizada)
 // + polegar oponente (2 falanges, eixo de oposição em X)
@@ -2469,7 +2497,7 @@ function montarMaoRobotica(){
   function ligarMotor(l){ l.motor.on=true; aplicarMotor(l); }
 
   const Y=0.4;
-  const palma=criarPeca('placa',{larg:0.10,prof:0.14,esp:0.012},
+  const palma=criarPeca('placa',{larg:0.10,prof:0.14,largTopo:0.10,deslocX:0,esp:0.012},
     {x:0,y:Y,z:0},{x:0,y:0,z:0});
 
   const EIXO_FLEXAO=new THREE.Vector3(0,0,1);
@@ -2603,7 +2631,7 @@ function montarDiferencial(){
   snapshot();
   const H=0.45, DX=0.058, YS=0.0504;
   const F=addPart('placa',new CANNON.Vec3(0,H,-0.25));
-  F.par.larg=0.14; F.par.prof=0.10; rebuild(F); fixarPeca(F,true);
+  F.par.larg=0.14; F.par.prof=0.10; F.par.largTopo=0.14; F.par.deslocX=0; rebuild(F); fixarPeca(F,true);
   F.home=F.body.position.clone(); F.hq=F.body.quaternion.clone();
   const GA=addPart('difcoroa',new CANNON.Vec3(0,H,0));
   GA.home=GA.body.position.clone(); GA.hq=GA.body.quaternion.clone();
