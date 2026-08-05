@@ -270,7 +270,7 @@ function resize(){ const w=stage.clientWidth,h=stage.clientHeight; if(!w||!h) re
   cam.aspect=w/h; cam.updateProjectionMatrix(); placeCam(); }
 new ResizeObserver(resize).observe(stage);
 
-const MAT={barra:0xd8a13a,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8,coroa:0x9a8a70,eixo:0xb8bcc6,came:0xc06a5a,difcoroa:0x7a9a6a,conica:0x9c8fb0,roldana:0x6f7686,corda:0xcfae7a,bracoA:0x5b7a99,cubo:0x5a9c95,manga:0xa3763f};
+const MAT={barra:0x9aa1ab,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8,coroa:0x9a8a70,eixo:0xb8bcc6,came:0xc06a5a,difcoroa:0x7a9a6a,conica:0x9c8fb0,roldana:0x6f7686,corda:0xcfae7a,bracoA:0x5b7a99,cubo:0x5a9c95,manga:0xa3763f};
 const CAT={
   barra:{nome:'Barra reta',p:{comp:{r:[0.02,1.2],v:0.5,u:'m'},esp:{r:[0.005,0.06],v:0.025,u:'m'}}},
   arco:{nome:'Semicirculo',p:{raio:{r:[0.04,0.6],v:0.25,u:'m'},arco:{r:[20,360],v:180,u:'\u00b0'},esp:{r:[0.005,0.05],v:0.02,u:'m'}}},
