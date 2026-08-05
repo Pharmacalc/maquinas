@@ -628,10 +628,25 @@ function build(tipo,par){
     ];
     const m=new THREE.Mesh(new THREE.LatheGeometry(perfil,20),mat);
     m.rotation.z=Math.PI/2; g.add(m);
-    const h=new THREE.Mesh(new THREE.CylinderGeometry(par.raio*0.42,par.raio*0.42,par.larg*1.05,14),
-      new THREE.MeshLambertMaterial({color:0x9aa3b2}));
+        // Aro mais ESTREITO que o pneu e recuado pro centro — é essa diferença de
+    // largura que faz o flanco parecer estufar por fora do aro (o aro nunca
+    // deve ultrapassar a borda do pneu, senão o metal "vaza" pros lados).
+    const largAro=par.larg*0.55;
+    const matAro=new THREE.MeshLambertMaterial({color:0x9aa3b2});
+    const h=new THREE.Mesh(new THREE.CylinderGeometry(par.raio*0.42,par.raio*0.42,largAro,14),matAro);
     h.rotation.z=Math.PI/2; g.add(h);
-  } else if(tipo==='bracoA'){
+    // Parafusos (porcas sextavadas, 6 lados) numa só face do aro.
+    const nParaf=5, raioParaf=par.raio*0.22, rParaf=par.raio*0.045, faceX=largAro/2;
+    for(let i=0;i<nParaf;i++){
+      const ang=i*(2*Math.PI/nParaf);
+      const py=raioParaf*Math.cos(ang), pz=raioParaf*Math.sin(ang);
+      const parafuso=new THREE.Mesh(new THREE.CylinderGeometry(rParaf,rParaf,par.raio*0.10,6),
+        new THREE.MeshLambertMaterial({color:0x5a6170}));
+      parafuso.rotation.z=Math.PI/2;
+      parafuso.position.set(faceX,py,pz);
+      g.add(parafuso);
+    }
+} else if(tipo==='bracoA'){
     // Braco em A de suspensao: 2 pontos internos (buchas no chassi) convergindo pra
     // 1 ponto externo (rotula na manga de eixo) - corpo rigido UNICO, zero solda.
     // Escrito no referencial natural (pivos internos em (0,0,+-base/2), rotula em
