@@ -609,34 +609,32 @@ function build(tipo,par){
     const eixoV=new THREE.Mesh(new THREE.CylinderGeometry(R*0.16,R*0.16,e*1.7,14),
       new THREE.MeshLambertMaterial({color:0x5a6170}));
     eixoV.rotation.z=Math.PI/2; g.add(eixoV);
-    } else if(tipo==='roda'){
+     } else if(tipo==='roda'){
     // colisão ESFÉRICA (cilindro do cannon afunda 80mm; esfera 0mm — medido)
     shapes.push({s:new CANNON.Sphere(par.raio),o:new CANNON.Vec3()});
     // Pneu com abaulamento lateral (efeito "baixa calibragem") — SÓ geometria,
     // sem deformação por contato: perfil revolvido (lathe) em vez de cilindro reto.
     // Custo é pago 1x no build(), não por frame — mesmo raio de colisão de sempre.
-    const R=par.raio, Lh=par.larg/2;
+    // O perfil NÃO vai até raio 0 (fica aberto em furoR) — senão a borracha fecha
+    // sólida no centro e engole o aro inteiro (era exatamente esse o bug).
+    const R=par.raio, Lh=par.larg/2, furoR=R*0.42; // furoR = raio externo do aro/cubo
     const perfil=[
-      new THREE.Vector2(0,        -Lh),
+      new THREE.Vector2(furoR,     -Lh),
       new THREE.Vector2(R*0.78,   -Lh),
       new THREE.Vector2(R*0.99,   -Lh*0.62),
       new THREE.Vector2(R*1.00,   -Lh*0.20),
       new THREE.Vector2(R*1.00,    Lh*0.20),
       new THREE.Vector2(R*0.99,    Lh*0.62),
       new THREE.Vector2(R*0.78,    Lh),
-      new THREE.Vector2(0,         Lh)
+      new THREE.Vector2(furoR,     Lh)
     ];
     const m=new THREE.Mesh(new THREE.LatheGeometry(perfil,20),mat);
     m.rotation.z=Math.PI/2; g.add(m);
-        // Aro mais ESTREITO que o pneu e recuado pro centro — é essa diferença de
-    // largura que faz o flanco parecer estufar por fora do aro (o aro nunca
-    // deve ultrapassar a borda do pneu, senão o metal "vaza" pros lados).
-    const largAro=par.larg*0.55;
+    const largAro=par.larg*0.7;
     const matAro=new THREE.MeshLambertMaterial({color:0x9aa3b2});
     const h=new THREE.Mesh(new THREE.CylinderGeometry(par.raio*0.42,par.raio*0.42,largAro,14),matAro);
     h.rotation.z=Math.PI/2; g.add(h);
-    // Parafusos (porcas sextavadas, 6 lados) numa só face do aro.
-    const nParaf=5, raioParaf=par.raio*0.22, rParaf=par.raio*0.045, faceX=largAro/2;
+    const nParaf=6, raioParaf=par.raio*0.22, rParaf=par.raio*0.045, faceX=largAro/2;
     for(let i=0;i<nParaf;i++){
       const ang=i*(2*Math.PI/nParaf);
       const py=raioParaf*Math.cos(ang), pz=raioParaf*Math.sin(ang);
@@ -646,6 +644,7 @@ function build(tipo,par){
       parafuso.position.set(faceX,py,pz);
       g.add(parafuso);
     }
+
 } else if(tipo==='bracoA'){
     // Braco em A de suspensao: 2 pontos internos (buchas no chassi) convergindo pra
     // 1 ponto externo (rotula na manga de eixo) - corpo rigido UNICO, zero solda.
