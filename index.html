@@ -627,8 +627,7 @@ function build(tipo,par){
   const h=new THREE.Mesh(new THREE.CylinderGeometry(par.raio*0.42,par.raio*0.42,par.larg*1.05,14),
     new THREE.MeshLambertMaterial({color:0x9aa3b2}));
   h.rotation.z=Math.PI/2; g.add(h);
-
-      // bucha (so estetica - ajuda a enxergar onde a junta com o chassi deve entrar)
+// bucha (so estetica - ajuda a enxergar onde a junta com o chassi deve entrar)
       const bch=new THREE.Mesh(new THREE.CylinderGeometry(e*0.55,e*0.55,e*1.3,12),
         new THREE.MeshLambertMaterial({color:0x5a6170}));
       bch.rotation.x=Math.PI/2; bch.position.set(0,0,pz); g.add(bch);
