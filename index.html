@@ -610,28 +610,24 @@ function build(tipo,par){
       new THREE.MeshLambertMaterial({color:0x5a6170}));
     eixoV.rotation.z=Math.PI/2; g.add(eixoV);
   } else if(tipo==='roda'){
-    // colisão ESFÉRICA (cilindro do cannon afunda 80mm; esfera 0mm — medido)
-    shapes.push({s:new CANNON.Sphere(par.raio),o:new CANNON.Vec3()});
-    const m=new THREE.Mesh(new THREE.CylinderGeometry(par.raio,par.raio,par.larg,20),mat);
-    m.rotation.z=Math.PI/2; g.add(m);
-    const h=new THREE.Mesh(new THREE.CylinderGeometry(par.raio*0.42,par.raio*0.42,par.larg*1.05,14),
-      new THREE.MeshLambertMaterial({color:0x9aa3b2}));
-    h.rotation.z=Math.PI/2; g.add(h);
-  } else if(tipo==='bracoA'){
-    // Braco em A de suspensao: 2 pontos internos (buchas no chassi) convergindo pra
-    // 1 ponto externo (rotula na manga de eixo) - corpo rigido UNICO, zero solda.
-    // Escrito no referencial natural (pivos internos em (0,0,+-base/2), rotula em
-    // (braco,0,0)); a centragem do centro de massa e feita automaticamente no fim
-    // de build() pra todas as pecas - nao repetir aqui.
-    const base=par.base, braco=par.braco, e=par.esp;
-    [-1,1].forEach(function(s){
-      const pz=s*base/2, dx=braco, dz=-pz;               // vetor do pivo ate a rotula
-      const L=Math.hypot(dx,dz), a=Math.atan2(-dz,dx);    // mesma convencao do 'arco'
-      const mx=braco/2, mz=pz/2;
-      const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(0,1,0),a);
-      shapes.push({s:new CANNON.Box(new CANNON.Vec3(L/2,e/2,e/2)),o:new CANNON.Vec3(mx,0,mz),q:q});
-      const m=new THREE.Mesh(new THREE.BoxGeometry(L,e,e),mat);
-      m.position.set(mx,0,mz); m.rotation.y=a; g.add(m);
+  shapes.push({s:new CANNON.Sphere(par.raio),o:new CANNON.Vec3()});
+  const R=par.raio, Lh=par.larg/2;
+  const perfil=[
+    new THREE.Vector2(0,        -Lh),
+    new THREE.Vector2(R*0.78,   -Lh),
+    new THREE.Vector2(R*0.99,   -Lh*0.62),
+    new THREE.Vector2(R*1.00,   -Lh*0.20),
+    new THREE.Vector2(R*1.00,    Lh*0.20),
+    new THREE.Vector2(R*0.99,    Lh*0.62),
+    new THREE.Vector2(R*0.78,    Lh),
+    new THREE.Vector2(0,         Lh)
+  ];
+  const m=new THREE.Mesh(new THREE.LatheGeometry(perfil,20),mat);
+  m.rotation.z=Math.PI/2; g.add(m);
+  const h=new THREE.Mesh(new THREE.CylinderGeometry(par.raio*0.42,par.raio*0.42,par.larg*1.05,14),
+    new THREE.MeshLambertMaterial({color:0x9aa3b2}));
+  h.rotation.z=Math.PI/2; g.add(h);
+
       // bucha (so estetica - ajuda a enxergar onde a junta com o chassi deve entrar)
       const bch=new THREE.Mesh(new THREE.CylinderGeometry(e*0.55,e*0.55,e*1.3,12),
         new THREE.MeshLambertMaterial({color:0x5a6170}));
