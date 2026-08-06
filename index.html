@@ -146,6 +146,547 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
 <script>
+// ==== three-csg-ts (vendorizado, MIT, github.com/samalexander/three-csg-ts) ====
+// Adaptado pra script classico: sem require/exports, usa o THREE global ja carregado.
+var CSG = (function(){
+"use strict";
+// --- NBuf.js ---
+class NBuf3 {
+    constructor(ct) {
+        this.top = 0;
+        this.array = new Float32Array(ct);
+    }
+    write(v) {
+        this.array[this.top++] = v.x;
+        this.array[this.top++] = v.y;
+        this.array[this.top++] = v.z;
+    }
+}
+class NBuf2 {
+    constructor(ct) {
+        this.top = 0;
+        this.array = new Float32Array(ct);
+    }
+    write(v) {
+        this.array[this.top++] = v.x;
+        this.array[this.top++] = v.y;
+    }
+}
+
+// --- Vector.js ---
+/**
+ * Represents a 3D vector.
+ */
+class Vector {
+    constructor(x = 0, y = 0, z = 0) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+    copy(v) {
+        this.x = v.x;
+        this.y = v.y;
+        this.z = v.z;
+        return this;
+    }
+    clone() {
+        return new Vector(this.x, this.y, this.z);
+    }
+    negate() {
+        this.x *= -1;
+        this.y *= -1;
+        this.z *= -1;
+        return this;
+    }
+    add(a) {
+        this.x += a.x;
+        this.y += a.y;
+        this.z += a.z;
+        return this;
+    }
+    sub(a) {
+        this.x -= a.x;
+        this.y -= a.y;
+        this.z -= a.z;
+        return this;
+    }
+    times(a) {
+        this.x *= a;
+        this.y *= a;
+        this.z *= a;
+        return this;
+    }
+    dividedBy(a) {
+        this.x /= a;
+        this.y /= a;
+        this.z /= a;
+        return this;
+    }
+    lerp(a, t) {
+        return this.add(new Vector().copy(a).sub(this).times(t));
+    }
+    unit() {
+        return this.dividedBy(this.length());
+    }
+    length() {
+        return Math.sqrt(Math.pow(this.x, 2) + Math.pow(this.y, 2) + Math.pow(this.z, 2));
+    }
+    normalize() {
+        return this.unit();
+    }
+    cross(b) {
+        const a = this.clone();
+        const ax = a.x, ay = a.y, az = a.z;
+        const bx = b.x, by = b.y, bz = b.z;
+        this.x = ay * bz - az * by;
+        this.y = az * bx - ax * bz;
+        this.z = ax * by - ay * bx;
+        return this;
+    }
+    dot(b) {
+        return this.x * b.x + this.y * b.y + this.z * b.z;
+    }
+    toVector3() {
+        return new THREE.Vector3(this.x, this.y, this.z);
+    }
+}
+
+// --- Plane.js ---
+/**
+ * Represents a plane in 3D space.
+ */
+class Plane {
+    constructor(normal, w) {
+        this.normal = normal;
+        this.w = w;
+        this.normal = normal;
+        this.w = w;
+    }
+    clone() {
+        return new Plane(this.normal.clone(), this.w);
+    }
+    flip() {
+        this.normal.negate();
+        this.w = -this.w;
+    }
+    // Split `polygon` by this plane if needed, then put the polygon or polygon
+    // fragments in the appropriate lists. Coplanar polygons go into either
+    // `coplanarFront` or `coplanarBack` depending on their orientation with
+    // respect to this plane. Polygons in front or in back of this plane go into
+    // either `front` or `back`.
+    splitPolygon(polygon, coplanarFront, coplanarBack, front, back) {
+        const COPLANAR = 0;
+        const FRONT = 1;
+        const BACK = 2;
+        const SPANNING = 3;
+        // Classify each point as well as the entire polygon into one of the above
+        // four classes.
+        let polygonType = 0;
+        const types = [];
+        for (let i = 0; i < polygon.vertices.length; i++) {
+            const t = this.normal.dot(polygon.vertices[i].pos) - this.w;
+            const type = t < -Plane.EPSILON ? BACK : t > Plane.EPSILON ? FRONT : COPLANAR;
+            polygonType |= type;
+            types.push(type);
+        }
+        // Put the polygon in the correct list, splitting it when necessary.
+        switch (polygonType) {
+            case COPLANAR:
+                (this.normal.dot(polygon.plane.normal) > 0
+                    ? coplanarFront
+                    : coplanarBack).push(polygon);
+                break;
+            case FRONT:
+                front.push(polygon);
+                break;
+            case BACK:
+                back.push(polygon);
+                break;
+            case SPANNING: {
+                const f = [], b = [];
+                for (let i = 0; i < polygon.vertices.length; i++) {
+                    const j = (i + 1) % polygon.vertices.length;
+                    const ti = types[i], tj = types[j];
+                    const vi = polygon.vertices[i], vj = polygon.vertices[j];
+                    if (ti != BACK)
+                        f.push(vi);
+                    if (ti != FRONT)
+                        b.push(ti != BACK ? vi.clone() : vi);
+                    if ((ti | tj) == SPANNING) {
+                        const t = (this.w - this.normal.dot(vi.pos)) /
+                            this.normal.dot(new Vector().copy(vj.pos).sub(vi.pos));
+                        const v = vi.interpolate(vj, t);
+                        f.push(v);
+                        b.push(v.clone());
+                    }
+                }
+                if (f.length >= 3)
+                    front.push(new Polygon(f, polygon.shared));
+                if (b.length >= 3)
+                    back.push(new Polygon(b, polygon.shared));
+                break;
+            }
+        }
+    }
+    static fromPoints(a, b, c) {
+        const n = new Vector()
+            .copy(b)
+            .sub(a)
+            .cross(new Vector().copy(c).sub(a))
+            .normalize();
+        return new Plane(n.clone(), n.dot(a));
+    }
+}
+Plane.EPSILON = 1e-5;
+
+// --- Polygon.js ---
+/**
+ * Represents a convex polygon. The vertices used to initialize a polygon must
+ * be coplanar and form a convex loop. They do not have to be `Vertex`
+ * instances but they must behave similarly (duck typing can be used for
+ * customization).
+ *
+ * Each convex polygon has a `shared` property, which is shared between all
+ * polygons that are clones of each other or were split from the same polygon.
+ * This can be used to define per-polygon properties (such as surface color).
+ */
+class Polygon {
+    constructor(vertices, shared) {
+        this.vertices = vertices;
+        this.shared = shared;
+        this.plane = Plane.fromPoints(vertices[0].pos, vertices[1].pos, vertices[2].pos);
+    }
+    clone() {
+        return new Polygon(this.vertices.map((v) => v.clone()), this.shared);
+    }
+    flip() {
+        this.vertices.reverse().map((v) => v.flip());
+        this.plane.flip();
+    }
+}
+
+// --- Vertex.js ---
+/**
+ * Represents a vertex of a polygon. Use your own vertex class instead of this
+ * one to provide additional features like texture coordinates and vertex
+ * colors. Custom vertex classes need to provide a `pos` property and `clone()`,
+ * `flip()`, and `interpolate()` methods that behave analogous to the ones
+ * defined by `CSG.Vertex`. This class provides `normal` so convenience
+ * functions like `CSG.sphere()` can return a smooth vertex normal, but `normal`
+ * is not used anywhere else.
+ */
+class Vertex {
+    constructor(pos, normal, uv, color) {
+        this.pos = new Vector().copy(pos);
+        this.normal = new Vector().copy(normal);
+        this.uv = new Vector().copy(uv);
+        this.uv.z = 0;
+        color && (this.color = new Vector().copy(color));
+    }
+    clone() {
+        return new Vertex(this.pos, this.normal, this.uv, this.color);
+    }
+    // Invert all orientation-specific data (e.g. vertex normal). Called when the
+    // orientation of a polygon is flipped.
+    flip() {
+        this.normal.negate();
+    }
+    // Create a new vertex between this vertex and `other` by linearly
+    // interpolating all properties using a parameter of `t`. Subclasses should
+    // override this to interpolate additional properties.
+    interpolate(other, t) {
+        return new Vertex(this.pos.clone().lerp(other.pos, t), this.normal.clone().lerp(other.normal, t), this.uv.clone().lerp(other.uv, t), this.color && other.color && this.color.clone().lerp(other.color, t));
+    }
+}
+
+// --- Node.js ---
+/**
+ * Holds a node in a BSP tree. A BSP tree is built from a collection of polygons
+ * by picking a polygon to split along. That polygon (and all other coplanar
+ * polygons) are added directly to that node and the other polygons are added to
+ * the front and/or back subtrees. This is not a leafy BSP tree since there is
+ * no distinction between internal and leaf nodes.
+ */
+class Node {
+    constructor(polygons) {
+        this.plane = null;
+        this.front = null;
+        this.back = null;
+        this.polygons = [];
+        if (polygons)
+            this.build(polygons);
+    }
+    clone() {
+        const node = new Node();
+        node.plane = this.plane && this.plane.clone();
+        node.front = this.front && this.front.clone();
+        node.back = this.back && this.back.clone();
+        node.polygons = this.polygons.map((p) => p.clone());
+        return node;
+    }
+    // Convert solid space to empty space and empty space to solid space.
+    invert() {
+        for (let i = 0; i < this.polygons.length; i++)
+            this.polygons[i].flip();
+        this.plane && this.plane.flip();
+        this.front && this.front.invert();
+        this.back && this.back.invert();
+        const temp = this.front;
+        this.front = this.back;
+        this.back = temp;
+    }
+    // Recursively remove all polygons in `polygons` that are inside this BSP
+    // tree.
+    clipPolygons(polygons) {
+        if (!this.plane)
+            return polygons.slice();
+        let front = new Array(), back = new Array();
+        for (let i = 0; i < polygons.length; i++) {
+            this.plane.splitPolygon(polygons[i], front, back, front, back);
+        }
+        if (this.front)
+            front = this.front.clipPolygons(front);
+        this.back ? (back = this.back.clipPolygons(back)) : (back = []);
+        return front.concat(back);
+    }
+    // Remove all polygons in this BSP tree that are inside the other BSP tree
+    // `bsp`.
+    clipTo(bsp) {
+        this.polygons = bsp.clipPolygons(this.polygons);
+        if (this.front)
+            this.front.clipTo(bsp);
+        if (this.back)
+            this.back.clipTo(bsp);
+    }
+    // Return a list of all polygons in this BSP tree.
+    allPolygons() {
+        let polygons = this.polygons.slice();
+        if (this.front)
+            polygons = polygons.concat(this.front.allPolygons());
+        if (this.back)
+            polygons = polygons.concat(this.back.allPolygons());
+        return polygons;
+    }
+    // Build a BSP tree out of `polygons`. When called on an existing tree, the
+    // new polygons are filtered down to the bottom of the tree and become new
+    // nodes there. Each set of polygons is partitioned using the first polygon
+    // (no heuristic is used to pick a good split).
+    build(polygons) {
+        if (!polygons.length)
+            return;
+        if (!this.plane)
+            this.plane = polygons[0].plane.clone();
+        const front = [], back = [];
+        for (let i = 0; i < polygons.length; i++) {
+            this.plane.splitPolygon(polygons[i], this.polygons, this.polygons, front, back);
+        }
+        if (front.length) {
+            if (!this.front)
+                this.front = new Node();
+            this.front.build(front);
+        }
+        if (back.length) {
+            if (!this.back)
+                this.back = new Node();
+            this.back.build(back);
+        }
+    }
+}
+
+// --- CSG.js ---
+/**
+ * Holds a binary space partition tree representing a 3D solid. Two solids can
+ * be combined using the `union()`, `subtract()`, and `intersect()` methods.
+ */
+class CSG {
+    constructor() {
+        this.polygons = new Array();
+    }
+    static fromPolygons(polygons) {
+        const csg = new CSG();
+        csg.polygons = polygons;
+        return csg;
+    }
+    static fromGeometry(geom, objectIndex) {
+        let polys = [];
+        const posattr = geom.attributes.position;
+        const normalattr = geom.attributes.normal;
+        const uvattr = geom.attributes.uv;
+        const colorattr = geom.attributes.color;
+        let index;
+        if (geom.index) {
+            index = geom.index.array;
+        }
+        else {
+            index = new Array((posattr.array.length / posattr.itemSize) | 0);
+            for (let i = 0; i < index.length; i++)
+                index[i] = i;
+        }
+        const triCount = (index.length / 3) | 0;
+        polys = new Array(triCount);
+        for (let i = 0, pli = 0, l = index.length; i < l; i += 3, pli++) {
+            const vertices = new Array(3);
+            for (let j = 0; j < 3; j++) {
+                const vi = index[i + j];
+                const vp = vi * 3;
+                const vt = vi * 2;
+                const x = posattr.array[vp];
+                const y = posattr.array[vp + 1];
+                const z = posattr.array[vp + 2];
+                const nx = normalattr.array[vp];
+                const ny = normalattr.array[vp + 1];
+                const nz = normalattr.array[vp + 2];
+                const u = uvattr.array[vt];
+                const v = uvattr.array[vt + 1];
+                vertices[j] = new Vertex(new Vector(x, y, z), new Vector(nx, ny, nz), new Vector(u, v, 0), colorattr &&
+                    new Vector(colorattr.array[vt], colorattr.array[vt + 1], colorattr.array[vt + 2]));
+            }
+            polys[pli] = new Polygon(vertices, objectIndex);
+        }
+        return CSG.fromPolygons(polys);
+    }
+    static fromMesh(mesh, objectIndex) {
+        const csg = CSG.fromGeometry(mesh.geometry, objectIndex);
+        const ttvv0 = new THREE.Vector3();
+        const tmpm3 = new THREE.Matrix3();
+        tmpm3.getNormalMatrix(mesh.matrix);
+        for (let i = 0; i < csg.polygons.length; i++) {
+            const p = csg.polygons[i];
+            for (let j = 0; j < p.vertices.length; j++) {
+                const v = p.vertices[j];
+                v.pos.copy(ttvv0.copy(v.pos.toVector3()).applyMatrix4(mesh.matrix));
+                v.normal.copy(ttvv0.copy(v.normal.toVector3()).applyMatrix3(tmpm3));
+            }
+        }
+        return csg;
+    }
+    static toMesh(csg, toMatrix, toMaterial) {
+        let triCount = 0;
+        const ps = csg.polygons;
+        for (const p of ps) {
+            triCount += p.vertices.length - 2;
+        }
+        const geom = new THREE.BufferGeometry();
+        const vertices = new NBuf3(triCount * 3 * 3);
+        const normals = new NBuf3(triCount * 3 * 3);
+        const uvs = new NBuf2(triCount * 2 * 3);
+        let colors;
+        const grps = [];
+        for (const p of ps) {
+            const pvs = p.vertices;
+            const pvlen = pvs.length;
+            if (p.shared !== undefined) {
+                if (!grps[p.shared])
+                    grps[p.shared] = [];
+            }
+            if (pvlen && pvs[0].color !== undefined) {
+                if (!colors)
+                    colors = new NBuf3(triCount * 3 * 3);
+            }
+            for (let j = 3; j <= pvlen; j++) {
+                p.shared !== undefined &&
+                    grps[p.shared].push(vertices.top / 3, vertices.top / 3 + 1, vertices.top / 3 + 2);
+                vertices.write(pvs[0].pos);
+                vertices.write(pvs[j - 2].pos);
+                vertices.write(pvs[j - 1].pos);
+                normals.write(pvs[0].normal);
+                normals.write(pvs[j - 2].normal);
+                normals.write(pvs[j - 1].normal);
+                uvs.write(pvs[0].uv);
+                uvs.write(pvs[j - 2].uv);
+                uvs.write(pvs[j - 1].uv);
+                if (colors) {
+                    colors.write(pvs[0].color);
+                    colors.write(pvs[j - 2].color);
+                    colors.write(pvs[j - 1].color);
+                }
+            }
+        }
+        geom.setAttribute('position', new THREE.BufferAttribute(vertices.array, 3));
+        geom.setAttribute('normal', new THREE.BufferAttribute(normals.array, 3));
+        geom.setAttribute('uv', new THREE.BufferAttribute(uvs.array, 2));
+        colors && geom.setAttribute('color', new THREE.BufferAttribute(colors.array, 3));
+        if (grps.length) {
+            let index = [];
+            let gbase = 0;
+            for (let gi = 0; gi < grps.length; gi++) {
+                geom.addGroup(gbase, grps[gi].length, gi);
+                gbase += grps[gi].length;
+                index = index.concat(grps[gi]);
+            }
+            geom.setIndex(index);
+        }
+        const inv = new THREE.Matrix4().copy(toMatrix).invert();
+        geom.applyMatrix4(inv);
+        geom.computeBoundingSphere();
+        geom.computeBoundingBox();
+        const m = new THREE.Mesh(geom, toMaterial);
+        m.matrix.copy(toMatrix);
+        m.matrix.decompose(m.position, m.quaternion, m.scale);
+        m.rotation.setFromQuaternion(m.quaternion);
+        m.updateMatrixWorld();
+        m.castShadow = m.receiveShadow = true;
+        return m;
+    }
+    clone() {
+        const csg = new CSG();
+        csg.polygons = this.polygons.map((p) => {
+            return p.clone();
+        });
+        return csg;
+    }
+    toPolygons() {
+        return this.polygons;
+    }
+    union(csg) {
+        const a = new Node(this.clone().polygons);
+        const b = new Node(csg.clone().polygons);
+        a.clipTo(b);
+        b.clipTo(a);
+        b.invert();
+        b.clipTo(a);
+        b.invert();
+        a.build(b.allPolygons());
+        return CSG.fromPolygons(a.allPolygons());
+    }
+    subtract(csg) {
+        const a = new Node(this.clone().polygons);
+        const b = new Node(csg.clone().polygons);
+        a.invert();
+        a.clipTo(b);
+        b.clipTo(a);
+        b.invert();
+        b.clipTo(a);
+        b.invert();
+        a.build(b.allPolygons());
+        a.invert();
+        return CSG.fromPolygons(a.allPolygons());
+    }
+    intersect(csg) {
+        const a = new Node(this.clone().polygons);
+        const b = new Node(csg.clone().polygons);
+        a.invert();
+        b.clipTo(a);
+        b.invert();
+        a.clipTo(b);
+        b.clipTo(a);
+        a.build(b.allPolygons());
+        a.invert();
+        return CSG.fromPolygons(a.allPolygons());
+    }
+    // Return a new CSG solid with solid and empty space switched. This solid is
+    // not modified.
+    inverse() {
+        const csg = this.clone();
+        csg.polygons.forEach((p) => p.flip());
+        return csg;
+    }
+}
+
+return CSG;
+})();
+</script>
+<script>
 function avisar(m){  // aviso verde, some sozinho — não confundir com erro
   var e=document.getElementById('err');
   e.style.display='block'; e.style.background='#1d3a22'; e.style.color='#a8e0a0';
@@ -270,9 +811,12 @@ function resize(){ const w=stage.clientWidth,h=stage.clientHeight; if(!w||!h) re
   cam.aspect=w/h; cam.updateProjectionMatrix(); placeCam(); }
 new ResizeObserver(resize).observe(stage);
 
-const MAT={barra:0x9aa1ab,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8,coroa:0x9a8a70,eixo:0xb8bcc6,came:0xc06a5a,difcoroa:0x7a9a6a,conica:0x9c8fb0,roldana:0x6f7686,corda:0xcfae7a,bracoA:0x5b7a99,cubo:0x5a9c95,manga:0xa3763f};
+const MAT={barra:0x9aa1ab,arco:0xc9752f,placa:0x7f8aa0,roda:0x2e2f36,dentada:0x8a93a8,coroa:0x9a8a70,eixo:0xb8bcc6,came:0xc06a5a,difcoroa:0x7a9a6a,conica:0x9c8fb0,roldana:0x6f7686,corda:0xcfae7a,bracoA:0x5b7a99,cubo:0x5a9c95,manga:0xa3763f,furada:0x9aa1ab};
 const CAT={
   barra:{nome:'Barra reta',p:{comp:{r:[0.02,1.2],v:0.5,u:'m'},esp:{r:[0.005,0.06],v:0.025,u:'m'}}},
+  // Peça sem sliders: geometria vem só de furar() (barra + eixo cilíndrico → barra furada).
+  // Não aparece na prateleira (ver o forEach de CAT logo abaixo do catálogo, pula k==='furada').
+  furada:{nome:'Peça furada',p:{}},
   arco:{nome:'Semicirculo',p:{raio:{r:[0.04,0.6],v:0.25,u:'m'},arco:{r:[20,360],v:180,u:'\u00b0'},esp:{r:[0.005,0.05],v:0.02,u:'m'}}},
   placa:{nome:'Placa',p:{larg:{r:[0.05,0.9],v:0.35,u:'m'},prof:{r:[0.05,0.9],v:0.22,u:'m'},largTopo:{r:[0,0.9],v:0.35,u:'m'},deslocX:{r:[-0.45,0.45],v:0,u:'m'},esp:{r:[0.004,0.05],v:0.012,u:'m'}}},
   roda:{nome:'Roda',p:{raio:{r:[0.03,0.25],v:0.09,u:'m'},larg:{r:[0.01,0.1],v:0.035,u:'m'}}},
@@ -591,6 +1135,94 @@ function build(tipo,par){
       new THREE.MeshLambertMaterial({color:0x8a8f9c}));
     p1.rotation.z=Math.PI/2; p1.position.x=L/2-r*0.25; g.add(p1);
     const p2=p1.clone(); p2.position.x=-L/2+r*0.25; g.add(p2);
+  } else if(tipo==='furada'){
+    // Barra com furo cilíndrico perpendicular (gerado por furar(), não editável por slider).
+    // Visual = subtração booleana real (CSG). Física = Cannon 0.6.2 não tem shape
+    // côncavo que colida com Box/Cylinder (só planeTrimesh/sphereTrimesh — conferido
+    // no source), então o vazio é aproximado por um colar de cunhas ao redor do furo
+    // + até 4 talas retangulares cobrindo o resto do retângulo original.
+    if(!par.baseTipo){
+      // 1ª chamada de addPart() antes do rebuild com os dados reais (acontece ao
+      // recarregar uma cena salva, ver instanciarModelo) — placeholder inofensivo.
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(0.01,0.01,0.01)),o:new CANNON.Vec3()});
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(0.02,0.02,0.02),mat));
+    } else {
+      const bp=par.basePar;
+      const caixa=caixaLocalFuro(par.baseTipo,bp);
+      const half=caixa.half, centroCx=caixa.centro;
+      const ax=par.furoEixoIdx, p1i=(ax+1)%3, p2i=(ax+2)%3;
+      const c=[par.furoPos.x,par.furoPos.y,par.furoPos.z];
+      const h1=half[p1i], h2=half[p2i], hAx=half[ax];
+      const rIn=par.furoRaio, rOut=par.furoOuterR;
+      const eixoVec=[new THREE.Vector3(1,0,0),new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1)];
+      const axisLocal=eixoVec[ax], p1Local=eixoVec[p1i], p2Local=eixoVec[p2i];
+      // deslocamento do centro da caixa envolvente (placa pode não estar centrada
+      // na origem local — barra sempre está, então isso é 0 pra ela e não muda nada)
+      const offAxial=axisLocal.clone().multiplyScalar(centroCx[ax]);
+      // colar: N cunhas (aproximação poligonal do anel ao redor do furo).
+      // tangDir É CALCULADO por produto vetorial (radialDir × axisLocal), não por
+      // combinação manual de senos/cossenos — a versão manual podia gerar uma base
+      // ESPELHADA (determinante -1) dependendo do eixo escolhido, e setFromRotationMatrix
+      // quebra silenciosamente nesse caso (só sabe extrair rotação de verdade, não
+      // reflexão). Era exatamente esse o bug do furo saindo no eixo errado.
+      const N=10;
+      for(let i=0;i<N;i++){
+        const th=(i+0.5)*(2*Math.PI/N);
+        const rMid=(rIn+rOut)/2;
+        const radialDir=p1Local.clone().multiplyScalar(Math.cos(th)).add(p2Local.clone().multiplyScalar(Math.sin(th)));
+        const tangDir=radialDir.clone().cross(axisLocal);
+        const centro=radialDir.clone().multiplyScalar(rMid)
+          .add(p1Local.clone().multiplyScalar(c[p1i])).add(p2Local.clone().multiplyScalar(c[p2i])).add(offAxial);
+        const m4=new THREE.Matrix4().makeBasis(radialDir,axisLocal,tangDir);
+        const q3=new THREE.Quaternion().setFromRotationMatrix(m4);
+        shapes.push({s:new CANNON.Box(new CANNON.Vec3((rOut-rIn)/2, hAx, rMid*Math.tan(Math.PI/N))),
+          o:new CANNON.Vec3(centro.x,centro.y,centro.z),
+          q:new CANNON.Quaternion(q3.x,q3.y,q3.z,q3.w)});
+      }
+      // até 4 talas retangulares (esquerda/direita/baixo/cima) cobrindo o resto do
+      // retângulo original — mesma orientação pras 4, só muda centro/tamanho.
+      // p2Basis (não p2Local puro) pro mesmo motivo acima: garantir base própria.
+      const p2Basis=p1Local.clone().cross(axisLocal);
+      const m4s=new THREE.Matrix4().makeBasis(p1Local,axisLocal,p2Basis);
+      const q3s=new THREE.Quaternion().setFromRotationMatrix(m4s);
+      const qSlab=new CANNON.Quaternion(q3s.x,q3s.y,q3s.z,q3s.w);
+      const c1=c[p1i], c2=c[p2i], cc1=centroCx[p1i], cc2=centroCx[p2i];
+      [{lo1:cc1-h1,hi1:c1-rOut,lo2:cc2-h2,hi2:cc2+h2},
+       {lo1:c1+rOut,hi1:cc1+h1,lo2:cc2-h2,hi2:cc2+h2},
+       {lo1:Math.max(c1-rOut,cc1-h1),hi1:Math.min(c1+rOut,cc1+h1),lo2:cc2-h2,hi2:c2-rOut},
+       {lo1:Math.max(c1-rOut,cc1-h1),hi1:Math.min(c1+rOut,cc1+h1),lo2:c2+rOut,hi2:cc2+h2}
+      ].forEach(function(f){
+        if(f.hi1-f.lo1<1e-5 || f.hi2-f.lo2<1e-5) return;
+        const cp1=(f.lo1+f.hi1)/2, hp1=(f.hi1-f.lo1)/2;
+        const cp2=(f.lo2+f.hi2)/2, hp2=(f.hi2-f.lo2)/2;
+        const centro=p1Local.clone().multiplyScalar(cp1).add(p2Local.clone().multiplyScalar(cp2)).add(offAxial);
+        shapes.push({s:new CANNON.Box(new CANNON.Vec3(hp1,hAx,hp2)),
+          o:new CANNON.Vec3(centro.x,centro.y,centro.z), q:qSlab});
+      });
+      // visual: subtração booleana real (a base inteira menos um cilindro na posição/eixo do furo).
+      // Posição do cilindro usa só as componentes p1/p2 (mesma simplificação do colar:
+      // o furo é tratado como sempre centrado ao longo do próprio eixo axial, atravessando
+      // a espessura inteira — ANTES essa linha usava c[0..2] cru, incluindo a componente
+      // axial, o que podia descentralizar o cilindro do CSG em relação ao colar físico e,
+      // em alguns ângulos/posições, deixar o corte raso demais pra atravessar de verdade).
+      const baseR=build(par.baseTipo,bp);
+      const baseMesh=new THREE.Mesh(baseR.mesh.children[0].geometry.clone(),mat);
+      baseMesh.updateMatrix();
+      const cilGeo=new THREE.CylinderGeometry(rIn,rIn,hAx*3.0,24);
+      const cilMesh=new THREE.Mesh(cilGeo);
+      const m4c=new THREE.Matrix4().makeBasis(p1Local,axisLocal,p2Basis);
+      cilMesh.quaternion.setFromRotationMatrix(m4c);
+      const posCil=p1Local.clone().multiplyScalar(c[p1i]).add(p2Local.clone().multiplyScalar(c[p2i])).add(offAxial);
+      cilMesh.position.copy(posCil);
+      cilMesh.updateMatrix();
+      const rCSG=CSG.fromMesh(baseMesh).subtract(CSG.fromMesh(cilMesh));
+      const furadaMesh=CSG.toMesh(rCSG,new THREE.Matrix4(),mat);
+      const nVerts=furadaMesh.geometry.attributes.position?furadaMesh.geometry.attributes.position.count:0;
+      if(nVerts===0){
+        throw new Error('resultado do furo ficou vazio (CSG não encontrou interseção) — tenta reposicionar o eixo mais no meio da peça');
+      }
+      g.add(furadaMesh);
+    }
   } else if(tipo==='came'){
     // disco excêntrico: gira na ORIGEM, centro geométrico deslocado exc em +Z local
     const R=par.raio, ex=par.exc, e=par.esp, nSeg=18;
@@ -609,7 +1241,7 @@ function build(tipo,par){
     const eixoV=new THREE.Mesh(new THREE.CylinderGeometry(R*0.16,R*0.16,e*1.7,14),
       new THREE.MeshLambertMaterial({color:0x5a6170}));
     eixoV.rotation.z=Math.PI/2; g.add(eixoV);
-     } else if(tipo==='roda'){
+  } else if(tipo==='roda'){
     // colisão ESFÉRICA (cilindro do cannon afunda 80mm; esfera 0mm — medido)
     shapes.push({s:new CANNON.Sphere(par.raio),o:new CANNON.Vec3()});
     // Pneu com abaulamento lateral (efeito "baixa calibragem") — SÓ geometria,
@@ -620,20 +1252,23 @@ function build(tipo,par){
     const R=par.raio, Lh=par.larg/2, furoR=R*0.42; // furoR = raio externo do aro/cubo
     const perfil=[
       new THREE.Vector2(furoR,     -Lh),
-      new THREE.Vector2(R*0.78,   -Lh),
-      new THREE.Vector2(R*0.99,   -Lh*0.62),
+      new THREE.Vector2(R*0.78,   -Lh),      // face lateral (encontro com o aro)
+      new THREE.Vector2(R*0.99,   -Lh*0.62), // flanco começa a estufar
       new THREE.Vector2(R*1.00,   -Lh*0.20),
-      new THREE.Vector2(R*1.00,    Lh*0.20),
+      new THREE.Vector2(R*1.00,    Lh*0.20), // banda de rodagem (largura plena)
       new THREE.Vector2(R*0.99,    Lh*0.62),
       new THREE.Vector2(R*0.78,    Lh),
       new THREE.Vector2(furoR,     Lh)
     ];
     const m=new THREE.Mesh(new THREE.LatheGeometry(perfil,20),mat);
     m.rotation.z=Math.PI/2; g.add(m);
+    // Aro mais ESTREITO que o pneu e recuado pro centro — visível agora através
+    // do furo acima (furoR bate com o raio do cubo, sem sobra nem gap).
     const largAro=par.larg*0.7;
     const matAro=new THREE.MeshLambertMaterial({color:0x9aa3b2});
     const h=new THREE.Mesh(new THREE.CylinderGeometry(par.raio*0.42,par.raio*0.42,largAro,14),matAro);
     h.rotation.z=Math.PI/2; g.add(h);
+    // Parafusos (porcas sextavadas, 6 lados) numa só face do aro.
     const nParaf=6, raioParaf=par.raio*0.22, rParaf=par.raio*0.045, faceX=largAro/2;
     for(let i=0;i<nParaf;i++){
       const ang=i*(2*Math.PI/nParaf);
@@ -644,8 +1279,7 @@ function build(tipo,par){
       parafuso.position.set(faceX,py,pz);
       g.add(parafuso);
     }
-
-} else if(tipo==='bracoA'){
+  } else if(tipo==='bracoA'){
     // Braco em A de suspensao: 2 pontos internos (buchas no chassi) convergindo pra
     // 1 ponto externo (rotula na manga de eixo) - corpo rigido UNICO, zero solda.
     // Escrito no referencial natural (pivos internos em (0,0,+-base/2), rotula em
@@ -653,13 +1287,14 @@ function build(tipo,par){
     // de build() pra todas as pecas - nao repetir aqui.
     const base=par.base, braco=par.braco, e=par.esp;
     [-1,1].forEach(function(s){
-      const pz=s*base/2, dx=braco, dz=-pz;
-      const L=Math.hypot(dx,dz), a=Math.atan2(-dz,dx);
+      const pz=s*base/2, dx=braco, dz=-pz;               // vetor do pivo ate a rotula
+      const L=Math.hypot(dx,dz), a=Math.atan2(-dz,dx);    // mesma convencao do 'arco'
       const mx=braco/2, mz=pz/2;
       const q=new CANNON.Quaternion(); q.setFromAxisAngle(new CANNON.Vec3(0,1,0),a);
       shapes.push({s:new CANNON.Box(new CANNON.Vec3(L/2,e/2,e/2)),o:new CANNON.Vec3(mx,0,mz),q:q});
       const m=new THREE.Mesh(new THREE.BoxGeometry(L,e,e),mat);
       m.position.set(mx,0,mz); m.rotation.y=a; g.add(m);
+      // bucha (so estetica - ajuda a enxergar onde a junta com o chassi deve entrar)
       const bch=new THREE.Mesh(new THREE.CylinderGeometry(e*0.55,e*0.55,e*1.3,12),
         new THREE.MeshLambertMaterial({color:0x5a6170}));
       bch.rotation.x=Math.PI/2; bch.position.set(0,0,pz); g.add(bch);
@@ -1380,6 +2015,77 @@ function espelhar(eixo){
   feitas.forEach(function(l){ links.push(l); aplicarMotor(l); });
   sel=[]; paint(); ui(); sync();  recalcularVetos();
 }
+// Furar: base (barra) + molde (eixo cilíndrico) → 1 peça nova 'furada'.
+// Física NÃO é booleana de verdade (Cannon 0.6.2 não colide shape côncavo
+// contra Box/Cylinder) — é aproximada por colar de cunhas + talas, calculada
+// e guardada em par pra ser reconstruída igual sempre que build() rodar de
+// novo (inclusive ao recarregar a cena salva).
+// Caixa envolvente LOCAL de uma peça, usada tanto por furar() (validação/margens)
+// quanto pelo build() de 'furada' (geometria) — fonte única, pra não duplicar a
+// conta e desalinhar as duas (foi assim que nasceu o bug do eixo espelhado).
+// Só cobre os tipos aceitos como base de furo por enquanto.
+function caixaLocalFuro(tipo,par){
+  if(tipo==='barra'){
+    return {half:[par.comp/2,par.esp/2,par.esp/2], centro:[0,0,0]};
+  }
+  if(tipo==='placa'){
+    // mesmo cálculo do build() de 'placa': trapézio no plano X-Z (larg na base,
+    // largTopo no topo, deslocX desloca o topo) — Z sempre ±prof/2 exato, só o
+    // X precisa do min/max dos 4 vértices por causa do deslocamento/afunilamento.
+    const larg=par.larg, lt=(par.largTopo!==undefined?par.largTopo:par.larg), dx=par.deslocX||0;
+    const xs=[-larg/2, larg/2, dx+lt/2, dx-lt/2];
+    const minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs);
+    const cx=(minX+maxX)/2, hx=(maxX-minX)/2;
+    return {half:[hx, par.esp/2, par.prof/2], centro:[cx, 0, 0]};
+  }
+  return null;
+}
+function furar(base,cil){
+  const caixa=caixaLocalFuro(base.tipo,base.par);
+  if(!caixa){ shout('furar: por enquanto só funciona com barra ou placa como base'); return; }
+  if(cil.tipo!=='eixo'){ shout('furar: a segunda peça precisa ser um eixo cilíndrico'); return; }
+  if(links.some(l=>l.a===base.id||l.b===base.id||l.a===cil.id||l.b===cil.id)){
+    shout('furar: remova as ligações dessas duas peças antes'); return;
+  }
+  const qInv=base.body.quaternion.inverse();
+  const relPos=qInv.vmult(new CANNON.Vec3(
+    cil.body.position.x-base.body.position.x,
+    cil.body.position.y-base.body.position.y,
+    cil.body.position.z-base.body.position.z));
+  const relQuat=qInv.mult(cil.body.quaternion);
+  const axis=relQuat.vmult(new CANNON.Vec3(1,0,0));
+  const eixos=[new CANNON.Vec3(1,0,0),new CANNON.Vec3(0,1,0),new CANNON.Vec3(0,0,1)];
+  let melhorI=0, melhorD=0;
+  eixos.forEach(function(e,i){ const d=Math.abs(axis.dot(e)); if(d>melhorD){melhorD=d;melhorI=i;} });
+  if(melhorD<0.98){ shout('furar: o eixo precisa estar bem perpendicular a uma face da peça'); return; }
+  const half=caixa.half, centro=caixa.centro;
+  const c=[relPos.x,relPos.y,relPos.z];
+  const p1i=(melhorI+1)%3, p2i=(melhorI+2)%3;
+  const margem1=half[p1i]-Math.abs(c[p1i]-centro[p1i]), margem2=half[p2i]-Math.abs(c[p2i]-centro[p2i]);
+  const rIn=cil.par.raio;
+  if(rIn>=margem1 || rIn>=margem2){
+    shout('furar: o eixo é grosso demais (ou está perto demais da borda) pra essa peça'); return;
+  }
+  const rOut=Math.min(rIn*1.8, margem1, margem2);
+  const par={baseTipo:base.tipo, basePar:JSON.parse(JSON.stringify(base.par)),
+             furoEixoIdx:melhorI, furoPos:{x:c[0],y:c[1],z:c[2]}, furoRaio:rIn, furoOuterR:rOut};
+  // constrói a peça nova ANTES de mexer nas originais — se der erro (ex: CSG vazio),
+  // nada foi removido e a barra/eixo continuam intactos.
+  const r=build('furada',par);
+  snapshot();
+  const pos0=base.body.position.clone(), quat0=base.body.quaternion.clone();
+  world.removeBody(base.body); scene.remove(base.mesh); parts=parts.filter(x=>x!==base);
+  world.removeBody(cil.body); scene.remove(cil.mesh); parts=parts.filter(x=>x!==cil);
+  const body=new CANNON.Body({mass:1});
+  r.shapes.forEach(x=>body.addShape(x.s,x.o,x.q));
+  body.position.copy(pos0); body.quaternion.copy(quat0);
+  body.collisionFilterGroup=2; body.collisionFilterMask=-1;
+  world.addBody(body); scene.add(r.mesh);
+  const p={id:++nId, tipo:'furada', par, rot:{x:0,y:0,z:0}, asm:null, body, mesh:r.mesh, com:r.com,
+           home:body.position.clone(), hq:body.quaternion.clone()};
+  parts.push(p); sel=[p]; recalcularVetos(); paint(); ui(); sync();
+  return p;
+}
 function join(kind){
   if(sel.length!==2) return;
   snapshot();
@@ -1948,7 +2654,7 @@ ABAS.forEach(function(a){
 });
 mostrarAbaPrateleira('basicas');
 
-Object.keys(CAT).forEach(function(k){ const b=document.createElement('button');
+Object.keys(CAT).forEach(function(k){ if(k==='furada') return; const b=document.createElement('button');
   b.textContent=CAT[k].nome; b.onclick=function(){ snapshot(); addPart(k); fecharPecas(); };
   shelves[CATEGORIA_PECA[k]||'complexas'].appendChild(b); });
 const bMao=document.createElement('button'); bMao.className='acc';
@@ -2163,6 +2869,17 @@ function ui(){
       b.onclick=function(){ try{ join(x[0]); }catch(e){ shout('ligar: '+e.message); } };
       bar.appendChild(b);
     });
+    const BASES_FURO=['barra','placa'];
+    const ehBaseEixo=(BASES_FURO.indexOf(sel[0].tipo)>=0&&sel[1].tipo==='eixo')||(sel[0].tipo==='eixo'&&BASES_FURO.indexOf(sel[1].tipo)>=0);
+    if(ehBaseEixo){
+      const bf=document.createElement('button'); bf.textContent='◎ furar'; bf.className='acc';
+      bf.title='o eixo vira um furo cilíndrico atravessando a peça, perpendicular a uma face';
+      bf.onclick=function(){
+        const base=sel[0].tipo==='eixo'?sel[1]:sel[0], cil=sel[0].tipo==='eixo'?sel[0]:sel[1];
+        try{ furar(base,cil); }catch(e){ shout('furar: '+e.message); }
+      };
+      bar.appendChild(bf);
+    }
     const cc=document.createElement('button'); cc.textContent='⊹ alinhar centros';
     cc.className='go'; cc.style.cssText='width:calc(50% - 3px);margin-top:2px';
     cc.onclick=function(){ try{ snapshot(); centrarEm(['x','y','z']); }catch(e){ shout('centrar: '+e.message); } };
