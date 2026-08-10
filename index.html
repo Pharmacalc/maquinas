@@ -905,7 +905,8 @@ const ICO_CHEVRON='<svg viewBox="0 0 24 24" width="13" height="13" style="vertic
 let gruposFechados=new Set(); // nomes de grupo de motores recolhidos — sobrevive a re-renders da sessão
 let modoAgrupar=false, selecaoAgrupar=new Set(); // modo "Agrupar juntas": escolher várias de uma vez
 
-function build(tipo,par){
+function build(tipo,par,opts){
+  opts=opts||{};
   const g=new THREE.Group(), shapes=[];
   const mat=new THREE.MeshLambertMaterial({color:MAT[tipo]});
   if(tipo==='barra'){
@@ -1057,8 +1058,10 @@ function build(tipo,par){
       shapes.push({s:new CANNON.Box(new CANNON.Vec3(e/2,R*0.10,R*Math.sin(Math.PI/nSeg)*1.05)),
         o:new CANNON.Vec3(-e/2,R*0.92*Math.cos(a),R*0.92*Math.sin(a)),q:q});
     }
-    shapes.push({s:new CANNON.Box(new CANNON.Vec3(e*0.8,R*0.22,R*0.22)),
-      o:new CANNON.Vec3(-e/2,0,0),q:new CANNON.Quaternion()});
+    if(!opts.semCubo){
+      shapes.push({s:new CANNON.Box(new CANNON.Vec3(e*0.8,R*0.22,R*0.22)),
+        o:new CANNON.Vec3(-e/2,0,0),q:new CANNON.Quaternion()});
+    }
     // dente: 4 cantos no plano (x,r) -> raiz A(ri),B(R); topo D(ri),C(R) deslocados
     // pela normal do cone. z do flanco vem de um PLANO por (A,B,C); z em D \u00e9 imposto
     // pelo plano (desvio ~1 mm em R=90 mm) para a face sair rigorosamente plana.
@@ -1087,7 +1090,8 @@ function build(tipo,par){
     costas.rotation.z=Math.PI/2; costas.position.x=-e/2; g.add(costas);
     const cubo=new THREE.Mesh(new THREE.CylinderGeometry(R*0.26,R*0.26,e*2.6,16),
       new THREE.MeshLambertMaterial({color:0x5a6170}));
-    cubo.rotation.z=Math.PI/2; g.add(cubo);
+    cubo.rotation.z=Math.PI/2;
+    if(!opts.semCubo) g.add(cubo);
   } else if(tipo==='roldana'){
     // polia de garganta em V: colis\u00e3o = esfera no fundo da garganta (cilindro do
     // Cannon afunda) + dois an\u00e9is de caixas nos flanges, que \u00e9 o que impede a
@@ -1136,16 +1140,65 @@ function build(tipo,par){
     p1.rotation.z=Math.PI/2; p1.position.x=L/2-r*0.25; g.add(p1);
     const p2=p1.clone(); p2.position.x=-L/2+r*0.25; g.add(p2);
   } else if(tipo==='furada'){
-    // Barra com furo cilíndrico perpendicular (gerado por furar(), não editável por slider).
-    // Visual = subtração booleana real (CSG). Física = Cannon 0.6.2 não tem shape
-    // côncavo que colida com Box/Cylinder (só planeTrimesh/sphereTrimesh — conferido
-    // no source), então o vazio é aproximado por um colar de cunhas ao redor do furo
-    // + até 4 talas retangulares cobrindo o resto do retângulo original.
+    // Duas variantes: 'caixa' (barra/placa — furo perpendicular a uma face, com
+    // colar+talas) e 'radial' (engrenagem cônica — furo sempre no eixo de giro,
+    // só colar, sem talas, porque o cubo já é redondo).
     if(!par.baseTipo){
       // 1ª chamada de addPart() antes do rebuild com os dados reais (acontece ao
       // recarregar uma cena salva, ver instanciarModelo) — placeholder inofensivo.
       shapes.push({s:new CANNON.Box(new CANNON.Vec3(0.01,0.01,0.01)),o:new CANNON.Vec3()});
       g.add(new THREE.Mesh(new THREE.BoxGeometry(0.02,0.02,0.02),mat));
+    } else if(par.furoRadial){
+      const bp=par.basePar;
+      const R=bp.raio, e=bp.esp;
+      const rIn=par.furoRaio, rOut=par.furoOuterR;
+      // engrenagem inteira SEM o cubo sólido (o cubo vira oco, montado abaixo).
+      // build() sempre recentra no próprio centro de massa — como essa chamada
+      // aninhada tem menos massa (sem o cubo), o centro dela NÃO bate com o da
+      // peça furada final. Desfaço o deslocamento (soma de volta gearR.com) pra
+      // voltar ao referencial "eixo de giro em X=Y=Z=0" que uso pro furo abaixo;
+      // o recentro definitivo (da peça furada inteira) acontece 1x só, no final
+      // desta função, genérico, igual qualquer outra peça.
+      const gearR=build(par.baseTipo,bp,{semCubo:true});
+      const d=gearR.com;
+      gearR.shapes.forEach(function(s){
+        s.o.x+=d.x; s.o.y+=d.y; s.o.z+=d.z; shapes.push(s);
+      });
+      gearR.mesh.children.slice().forEach(function(m){
+        m.position.x+=d.x; m.position.y+=d.y; m.position.z+=d.z; g.add(m);
+      });
+      // colar de N cunhas ao redor do furo, preenchendo só o cubo (rIn..rOut) —
+      // sem talas: o cubo já é um cilindro, não sobra "canto" pra cobrir.
+      const axisLocal=new THREE.Vector3(1,0,0), p1Local=new THREE.Vector3(0,1,0), p2Local=new THREE.Vector3(0,0,1);
+      const hAx=e*1.3; // metade do comprimento do cubo original (e*2.6)
+      const N=10;
+      for(let i=0;i<N;i++){
+        const th=(i+0.5)*(2*Math.PI/N);
+        const rMid=(rIn+rOut)/2;
+        const radialDir=p1Local.clone().multiplyScalar(Math.cos(th)).add(p2Local.clone().multiplyScalar(Math.sin(th)));
+        const tangDir=radialDir.clone().cross(axisLocal);
+        const centro=radialDir.clone().multiplyScalar(rMid);
+        const m4=new THREE.Matrix4().makeBasis(radialDir,axisLocal,tangDir);
+        const q3=new THREE.Quaternion().setFromRotationMatrix(m4);
+        shapes.push({s:new CANNON.Box(new CANNON.Vec3((rOut-rIn)/2, hAx, rMid*Math.tan(Math.PI/N))),
+          o:new CANNON.Vec3(centro.x,centro.y,centro.z),
+          q:new CANNON.Quaternion(q3.x,q3.y,q3.z,q3.w)});
+      }
+      // visual: cubo oco — CSG só nesse cilindro pequeno (barato), não na engrenagem
+      // inteira (dentes+cone ficam intocados, só o cubo sólido vira anel furado).
+      const hubOuterR=R*0.26;
+      const hubMesh=new THREE.Mesh(new THREE.CylinderGeometry(hubOuterR,hubOuterR,e*2.6,16));
+      hubMesh.rotation.z=Math.PI/2; hubMesh.updateMatrix();
+      const furoMesh=new THREE.Mesh(new THREE.CylinderGeometry(rIn,rIn,e*2.6*1.3,16));
+      furoMesh.rotation.z=Math.PI/2; furoMesh.updateMatrix();
+      const matCubo=new THREE.MeshLambertMaterial({color:0x5a6170});
+      const rCSG=CSG.fromMesh(hubMesh).subtract(CSG.fromMesh(furoMesh));
+      const hubOco=CSG.toMesh(rCSG,new THREE.Matrix4(),matCubo);
+      const nVerts=hubOco.geometry.attributes.position?hubOco.geometry.attributes.position.count:0;
+      if(nVerts===0){
+        throw new Error('resultado do furo no cubo ficou vazio — tenta um eixo mais fino ou mais centrado');
+      }
+      g.add(hubOco);
     } else {
       const bp=par.basePar;
       const caixa=caixaLocalFuro(par.baseTipo,bp);
@@ -2041,12 +2094,18 @@ function caixaLocalFuro(tipo,par){
   return null;
 }
 function furar(base,cil){
-  const caixa=caixaLocalFuro(base.tipo,base.par);
-  if(!caixa){ shout('furar: por enquanto só funciona com barra ou placa como base'); return; }
   if(cil.tipo!=='eixo'){ shout('furar: a segunda peça precisa ser um eixo cilíndrico'); return; }
   if(links.some(l=>l.a===base.id||l.b===base.id||l.a===cil.id||l.b===cil.id)){
     shout('furar: remova as ligações dessas duas peças antes'); return;
   }
+  // peças com simetria radial em torno do próprio eixo de giro (X local) — o furo
+  // só faz sentido bem no centro, ao longo desse eixo (é onde o cubo/mancal já
+  // está); não tem "escolher a face" porque só existe uma face possível.
+  const BASES_CUBO=['conica'];
+  if(BASES_CUBO.indexOf(base.tipo)>=0) return furarCubo(base,cil);
+
+  const caixa=caixaLocalFuro(base.tipo,base.par);
+  if(!caixa){ shout('furar: por enquanto só funciona com barra, placa ou engrenagem cônica como base'); return; }
   const qInv=base.body.quaternion.inverse();
   const relPos=qInv.vmult(new CANNON.Vec3(
     cil.body.position.x-base.body.position.x,
@@ -2069,8 +2128,35 @@ function furar(base,cil){
   const rOut=Math.min(rIn*1.8, margem1, margem2);
   const par={baseTipo:base.tipo, basePar:JSON.parse(JSON.stringify(base.par)),
              furoEixoIdx:melhorI, furoPos:{x:c[0],y:c[1],z:c[2]}, furoRaio:rIn, furoOuterR:rOut};
-  // constrói a peça nova ANTES de mexer nas originais — se der erro (ex: CSG vazio),
-  // nada foi removido e a barra/eixo continuam intactos.
+  return criarPecaFurada(base,cil,par);
+}
+function furarCubo(base,cil){
+  const qInv=base.body.quaternion.inverse();
+  const relPos=qInv.vmult(new CANNON.Vec3(
+    cil.body.position.x-base.body.position.x,
+    cil.body.position.y-base.body.position.y,
+    cil.body.position.z-base.body.position.z));
+  const relQuat=qInv.mult(cil.body.quaternion);
+  const axis=relQuat.vmult(new CANNON.Vec3(1,0,0));
+  const alinhamento=Math.abs(axis.dot(new CANNON.Vec3(1,0,0)));
+  if(alinhamento<0.98){
+    shout('furar: nessa peça o furo só pode ser no eixo de giro — alinha o eixo com ele'); return;
+  }
+  const offRadial=Math.hypot(relPos.y,relPos.z);
+  const hubR=base.par.raio*0.22;
+  if(offRadial>hubR*0.35){
+    shout('furar: o eixo do furo precisa passar pelo centro de giro da engrenagem'); return;
+  }
+  const rIn=cil.par.raio;
+  if(rIn>=hubR){ shout('furar: o eixo é grosso demais pro cubo dessa engrenagem'); return; }
+  const rOut=Math.min(rIn*1.8, hubR);
+  const par={baseTipo:base.tipo, basePar:JSON.parse(JSON.stringify(base.par)),
+             furoRadial:true, furoRaio:rIn, furoOuterR:rOut};
+  return criarPecaFurada(base,cil,par);
+}
+// comum aos dois caminhos: constrói a peça nova ANTES de mexer nas originais —
+// se der erro (ex: CSG vazio), nada foi removido e a base/eixo continuam intactos.
+function criarPecaFurada(base,cil,par){
   const r=build('furada',par);
   snapshot();
   const pos0=base.body.position.clone(), quat0=base.body.quaternion.clone();
@@ -2869,7 +2955,7 @@ function ui(){
       b.onclick=function(){ try{ join(x[0]); }catch(e){ shout('ligar: '+e.message); } };
       bar.appendChild(b);
     });
-    const BASES_FURO=['barra','placa'];
+    const BASES_FURO=['barra','placa','conica'];
     const ehBaseEixo=(BASES_FURO.indexOf(sel[0].tipo)>=0&&sel[1].tipo==='eixo')||(sel[0].tipo==='eixo'&&BASES_FURO.indexOf(sel[1].tipo)>=0);
     if(ehBaseEixo){
       const bf=document.createElement('button'); bf.textContent='◎ furar'; bf.className='acc';
